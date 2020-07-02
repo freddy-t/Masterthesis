@@ -1,10 +1,14 @@
 import gym
+import numpy as np
 import pandas as pd
+import copy
 from pathlib import Path
 
 
 DATAFILE = Path("C:/Users/fredd/Desktop/freddy/sciebo/Masterarbeit/03_Konzeptentwicklung/Daten") /\
                 "00_interesting_data.xlsx"
+
+# TODO: wird überhaupt eine gym environment benötigt, d.h. iwelche gym Funktionen benutzt?
 
 
 class FSCNetworkEnv(gym.Env):
@@ -15,16 +19,69 @@ class FSCNetworkEnv(gym.Env):
         self.__shell_data = None
         self.__init_support = None
         self.__init_resource = None
-        self.__support = None
-        self.__resource = None
+        self._support = None
+        self._resource = None
+        self._delta_resource = 0.005
+        self._support_factor = 0.1
 
     def step(self, actions):
-        pass
 
-    def reset(self):
-        self.__support = self.__init_support
-        self.__resource = self.__init_resource
-        return [self.__support, self.__resource]
+        # set the resulting support based on the previous resource assignment -> Therefore, it is the first calculation.
+        orig_support = copy.copy(self._support)
+        print('orig support:\n {}'.format(orig_support))
+        print(self._resource)
+        for agt in self._support.keys():
+            add_val = 0
+            # FSC has fixed support
+            if agt != 'FSC':
+                for par_agt in self._support.keys():
+                    # agents do not due to resource assignment to itself
+                    if agt != par_agt:
+                        # change to partner agent is only initiated, support is different
+                        if self._support.loc['support', agt] < self._support.loc['support', par_agt]:
+                            factor = self._support_factor
+                        elif self._support.loc['support', agt] > self._support.loc['support', par_agt]:
+                            factor = -self._support_factor
+                        else:
+                            factor = 0
+                        add_val += factor * (self._resource.loc[agt, par_agt] + self._resource.loc[par_agt, agt])/2
+
+                        print('agt:' + agt + '   ' + 'par_agt: ' + par_agt)
+                        print('added value: {}'.format(add_val))
+                # change in support is based on previous support --> use copy
+                self._support.loc['support', agt] = orig_support.loc['support', agt] + add_val
+                print(self._support)
+#TODO: berechnung des supports für mehrere konstellationen ausrechnen und sicherstellen, dass support nicht negativ wird
+        # set the resource assignment based on the agents' actions
+        for act_agt in actions.keys():
+            # Gov is passiv
+            if act_agt != 'Gov':
+                for part_agt in actions[act_agt].keys():
+                    # update value resource assignment if it is between 0 and 1
+                    new_val = self._resource.loc[act_agt, part_agt] + self._delta_resource * actions[act_agt][part_agt]
+                    if (0.0 <= new_val) and (new_val <= 1.0):
+                        self._resource.loc[act_agt, part_agt] += self._delta_resource * actions[act_agt][part_agt]
+
+                # set the resource assignment of the agent to itself
+                # as a result of the resource assignment to the other agents
+                ext_assign = np.array([self._resource.loc[act_agt, i] for i in actions[act_agt].keys()]).sum()
+                self._resource.loc[act_agt, act_agt] = 1 - ext_assign
+
+                print('active agent: {}'.format(act_agt))
+                print('partner agent: {}'.format(part_agt))
+                print(self._resource)
+
+
+        observation = 1
+        reward = 1
+        done = 1 # if there are no steps left
+        info = 1
+        return observation, reward, done, info
+
+    def reset(self) -> list:
+        self._support = self.__init_support
+        self._resource = self.__init_resource
+        return [self._support, self._resource]
 
     def render(self, mode='human', close=False):
         pass
