@@ -3,6 +3,8 @@ import torch
 import numpy as np
 from torch import nn
 
+np.random.seed(42)
+
 
 class Agent(object):
     def __init__(self, act_space, n_state):
@@ -18,7 +20,7 @@ class Agent(object):
                                             nn.Linear(self.__n_neurons, len(act_space)),
                                             nn.Softmax(dim=-1))
 
-    def get_actions(self, state):
+    def get_actions(self, state) -> dict:
         raise NotImplementedError
 
     def get_base_net(self):
@@ -37,7 +39,7 @@ class Shell(Agent):
         for agt in act_partners:
             self.__networks.update({agt: copy.copy(super().get_base_net())})
 
-    def get_actions(self, state):
+    def get_actions(self, state) -> dict:
         nets = self.__networks
         actions = dict()
         for key in nets.keys():
@@ -63,7 +65,7 @@ class FSC(Agent):
         for agt in act_partners:
             self.__networks.update({agt: copy.copy(super().get_base_net())})
 
-    def get_actions(self, state):
+    def get_actions(self, state) -> dict:
         nets = self.__networks
         actions = dict()
         for key in nets.keys():
@@ -84,6 +86,6 @@ class Gov(Agent):
         # super().__init__(action_space, n_state)
         pass
 
-    def get_actions(self, state):
+    def get_actions(self, state) -> dict:
         # government is performing maintain as action. That equals an passiv agent.
         return {'Shell': 0, 'FSC': 0}
