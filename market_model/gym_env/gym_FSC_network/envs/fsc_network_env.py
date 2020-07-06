@@ -27,7 +27,7 @@ class FSCNetworkEnv(gym.Env):
         self._delta_resource = 0.005
         self._support_factor = 0.1
         self._mode = 'train'
-        self._current_step = 0
+        self._current_step = None
         self._sub_lvl = None
 
     def step(self, actions):
@@ -91,10 +91,11 @@ class FSCNetworkEnv(gym.Env):
         observation = [copy.copy(self._support), copy.copy(self._resource)]
         reward = self.calc_reward(observation, self._mode)
         done = self.check_if_done()
-        info = 1
+        info = []
         return observation, reward, done, info
 
     def reset(self) -> list:
+        self._current_step = 0
         # set support and resource to initial values and return the state
         self._support = copy.copy(self.__init_support)
         self._resource = copy.copy(self.__init_resource)
@@ -151,7 +152,8 @@ class FSCNetworkEnv(gym.Env):
         self._mode = mod
 
     def check_if_done(self):
-        if (self._current_step == self._episode_len) or (self._current_step == len(self._shell_data_train)):
+        # minus one as the first step is performed with step=0, taking the iloc[0] of the data DataFrames
+        if (self._current_step == self._episode_len) or (self._current_step == len(self._shell_data_train) - 1):
             return True
         else:
             return False

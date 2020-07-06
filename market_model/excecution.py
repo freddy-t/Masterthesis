@@ -1,8 +1,11 @@
 import gym
 import agents
+import torch
+import copy
+import time
 import numpy as np
 import gym_FSC_network
-from torch import optim
+from functions import discount_rewards, get_total_rewards
 
 # TODO: ?resource and support initialize in env and check if keys are matching
 # TODO: if gov should be active: look for "passiv" and change the lines
@@ -11,6 +14,7 @@ AGENTS = ['FSC', 'Shell', 'Gov']
 CHANGEABLE_ALLOC = {'FSC':   ['Shell', 'Gov'],
                     'Shell': ['FSC'],
                     'Gov':   []}
+ACT_AGT = ['FSC', 'Shell']
 
 # initial support by the agents, must be in order as in AGENTS
 INIT_SUPPORT = [[1, 0.2, 0.1]]
@@ -24,10 +28,11 @@ INIT_RESOURCE = [[ 0.8,   0.2, 0],
                  [ 0.1,   0.1, 0.8]]
 
 SUB_LVL = 0.05
-LENGTH_EPISODE = 100
-NUM_EPISODES = 1
+LENGTH_EPISODE = 10  # limit is 313
+NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
-BATCH_SIZE = 20
+BATCH_SIZE = 3
+GAMMA = 0.99
 
 # pre-allocation
 action_space = [-1, 0, 1]  # action definition: -1 = decrease, 0 = maintain, 1 = increase
@@ -48,63 +53,93 @@ optimizers = dict()
 all_agents = dict()
 for agt in AGENTS:
     agt_optim = dict()
-    all_agents.update({agt: agents.FSC(action_space, num_states, CHANGEABLE_ALLOC[agt])})
+    all_agents.update({agt: eval('agents.' + agt)(action_space, num_states, CHANGEABLE_ALLOC[agt])})
     # gov is passiv agent, thus need no optimizer
     if agt != 'Gov':
         networks = all_agents[agt].get_networks()
         for par_agt in networks.keys():
-            agt_optim.update({par_agt: optim.Adam(networks[par_agt].parameters(), lr=LEARNING_RATE)})
+            agt_optim.update({par_agt: torch.optim.Adam(networks[par_agt].parameters(), lr=LEARNING_RATE)})
         optimizers.update({agt: agt_optim})
 
-total_rewards = []
-batch_rewards = []
-batch_actions = []
-batch_states = []
-batch_counter = 1
-
+# init dicts for the both active agents
+total_rewards = {'FSC': [], 'Shell': []}
+batch_returns = {'FSC': [], 'Shell': []}
+batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
+batch_states  = {'FSC': [], 'Shell': []}
+batch_counter = 0
+# TODO: nicht listen mit dicts appenden sondern ein dict haben und in diesem die np lists appenden
+#  --> bessere performance?
 ep = 0
 while ep < NUM_EPISODES:
+    start_time = time.time()
 
     state_0_cplt = env.reset()
-    states = []
-    rewards = []
-    actions = []
-    step_actions = dict()
+    states = {'FSC': [], 'Shell': []}
+    # states_cplt = []
+    rewards = {'FSC': [], 'Shell': []}
+    actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
+    step_actions = {'FSC': [], 'Shell': []}
     done = False
 
     while not done:
 
         # get action from each agent
-        for key in all_agents.keys():
-            # Gov is passiv
-            if key != 'Gov':
-                # extract support and resource assignment for agent as array
-                state_0 = np.array(state_0_cplt[0].loc['support'][key])
-                state_0 = np.append(state_0, state_0_cplt[1].loc[key])
-                step_actions.update({key: all_agents[key].get_actions(state_0)})
+        for key in ACT_AGT:
+            # extract support and resource assignment for agent as array
+            state_0 = np.array(state_0_cplt[0].loc['support'][key])
+            state_0 = np.append(state_0, state_0_cplt[1].loc[key])
+            states[key].append(state_0)
+            step_actions.update({key: all_agents[key].get_actions(state_0)})
 
         # perform action on environment
         state_1_cplt, r1, done, _ = env.step(step_actions)
-        states.append(state_0_cplt)
-        rewards.append(r1)
-        actions.append(step_actions)
+        # states_cplt.append(state_0_cplt) --> complete state can be saved for visualization purpose, maybe for testing
+        for agt in ACT_AGT:
+            rewards[agt].append(r1[agt])
+            for par_agt in actions[agt].keys():
+                actions[agt][par_agt].append(copy.copy(step_actions[agt][par_agt]))
 
         # update state
         state_0_cplt = state_1_cplt
 
-        # if done, data is put into the batch
+        # if done (= new rollout complete), data is put into the batch
         if done:
             # put data in batch
-            batch_states.append(states)
-            # batch_rewards.append()  # TODO: rewards must be discounted
-            batch_actions.append(actions)
-            #TODO : total_rewards
+            for agt in ACT_AGT:
+                batch_returns[agt].extend(discount_rewards(rewards[agt], GAMMA))
+                batch_states[agt].extend(states[agt])
+                for par_agt in actions[agt].keys():
+                    batch_actions[agt][par_agt].extend(actions[agt][par_agt])
+                total_rewards[agt].append(np.array(rewards[agt]).sum())
 
             batch_counter += 1
 
-            # if batch full, perform optimization on networks
+            # if batch full (= enough rollouts for optimization), perform optimization on networks
             if batch_counter == BATCH_SIZE:
+                # loop over all agents (1) and over the changeable allocation
+                for agt in ACT_AGT:
+                    for par_agt in optimizers[agt].keys():
 
-                pass
+                        # TODO von Kai abklären lassen ob das hier korrekt ist
+                        # set gradients of all optimizers to zero
+                        optimizers[agt][par_agt].zero_grad()
 
+                        # create tensors for calculation
+                        reward_tensor = torch.FloatTensor(batch_returns[agt])
+                        # TODO: hier weitermachen: evtl actions um 1 hoch, damit als index
+                        action_tensor = torch.LongTensor(batch_actions[agt][par_agt])
+
+                        # calculate the loss
+                        logprob = torch.log(all_agents[agt].predict(batch_states[agt], par_agt))
+
+                # empty batch
+                batch_returns = {'FSC': [], 'Shell': []}
+                batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
+                batch_states = {'FSC': [], 'Shell': []}
+                batch_counter = 1
+
+    # Print moving average
+    print('Episode {} complete in {:.3f} sec. Average of last 100: FSC: {:.3f}, Shell: {:.3f}'.
+          format(ep, time.time() - start_time, np.mean(total_rewards['FSC'][-100:]),
+                 np.mean(total_rewards['Shell'][-100:])))
     ep += 1

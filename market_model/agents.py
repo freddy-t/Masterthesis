@@ -43,12 +43,12 @@ class Shell(Agent):
         nets = self.__networks
         actions = dict()
         for key in nets.keys():
-            action_probs = self.predict(state, key)
-            actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})
+            action_probs = self.predict(state, key).detach().numpy()
+            actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})  #TODO: source of error?
         return actions
 
     def predict(self, state, partner_agt):
-        action_probs = self.__networks[partner_agt](torch.FloatTensor(state)).detach().numpy()
+        action_probs = self.__networks[partner_agt](torch.FloatTensor(state))
         return action_probs
 
     def get_networks(self):
@@ -69,12 +69,12 @@ class FSC(Agent):
         nets = self.__networks
         actions = dict()
         for key in nets.keys():
-            action_probs = self.predict(state, key)
+            action_probs = self.predict(state, key).detach().numpy()
             actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})
         return actions
 
     def predict(self, state, partner_agt):
-        action_probs = self.__networks[partner_agt](torch.FloatTensor(state)).detach().numpy()
+        action_probs = self.__networks[partner_agt](torch.FloatTensor(state))
         return action_probs
 
     def get_networks(self):

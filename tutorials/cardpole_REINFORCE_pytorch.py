@@ -75,14 +75,14 @@ def reinforce(env, policy_estimator, num_episodes=2000, batch_size=10, gamma=0.9
                 # If batch is complete, update network
                 if batch_counter == batch_size:
                     optimizer.zero_grad()
-                    state_tensor = torch.FloatTensor(batch_states)
                     reward_tensor = torch.FloatTensor(batch_rewards)
+                    state_tensor = torch.FloatTensor(batch_states)
 
                     # Actions are used as indices, must be LongTensor
                     action_tensor = torch.LongTensor(batch_actions)
 
                     # Calculate loss
-                    logprob = torch.log(policy_estimator.predict(state_tensor)) # calculate the log of the output of the NN defined above
+                    logprob = torch.log(policy_estimator.predict(batch_states)) # calculate the log of the output of the NN defined above
                     # torch.gather() to separate actual actions taken from the action probabilities to ensure we're
                     # calculating the loss function properly
                     # selected_logprobs = R(tau) * log (PI(a_t|s_t))
@@ -101,7 +101,7 @@ def reinforce(env, policy_estimator, num_episodes=2000, batch_size=10, gamma=0.9
 
                 avg_rewards = np.mean(total_rewards[-100:])
                 # Print running average
-                print("\rEp: {} Average of last 100:" + "{:.2f}".format(ep + 1, avg_rewards), end="")
+                print("\rEp: {} Average of last 100:".format(ep+1) + "{:.2f}".format(avg_rewards), end="")
                 ep += 1
 
     return total_rewards
