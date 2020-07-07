@@ -5,7 +5,7 @@ import copy
 import time
 import numpy as np
 import gym_FSC_network
-from functions import discount_rewards, get_total_rewards
+from functions import discount_rewards, create_dir, save_obj
 
 # TODO: ?resource and support initialize in env and check if keys are matching
 # TODO: if gov should be active: look for "passiv" and change the lines
@@ -23,16 +23,22 @@ INIT_SUPPORT = [[1, 0.2, 0.1]]
 # FSC
 # Shell
 # Gov
-INIT_RESOURCE = [[ 0.8,   0.2, 0],
-                 [0.05,   0.8, 0.15],
-                 [ 0.1,   0.1, 0.8]]
+INIT_RESOURCE = [[ 0.9,   0.1, 0],
+                 [0.05,   0.9, 0.05],
+                 [ 0.05,   0.1, 0.85]]
 
 SUB_LVL = 0.05
 LENGTH_EPISODE = 10  # limit is 313
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
-BATCH_SIZE = 3
+BATCH_SIZE = 5
 GAMMA = 0.99
+
+SAVE_INTERVAL = 2  # numbers of updates until data/model is saved
+
+# TODO: andere Parameter zur Namensgebung übergeben?
+# create saving directory
+SAVE_DIR = create_dir()
 
 # pre-allocation
 action_space = [-1, 0, 1]  # action definition: -1 = decrease, 0 = maintain, 1 = increase
@@ -61,21 +67,30 @@ for agt in AGENTS:
             agt_optim.update({par_agt: torch.optim.Adam(networks[par_agt].parameters(), lr=LEARNING_RATE)})
         optimizers.update({agt: agt_optim})
 
+# save initial agents
+torch.save(all_agents, (SAVE_DIR / 'agents_init'))
+
+# file = open(filename, 'wb')
+# pickle.dump(all_agents, file)
+# file.close()
+# fh = open(filename, 'rb')
+# test = pickle.load(fh)
+
 # init dicts for the both active agents
 total_rewards = {'FSC': [], 'Shell': []}
+states_cplt = []
 batch_returns = {'FSC': [], 'Shell': []}
 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
 batch_states  = {'FSC': [], 'Shell': []}
+
 batch_counter = 0
-# TODO: nicht listen mit dicts appenden sondern ein dict haben und in diesem die np lists appenden
-#  --> bessere performance?
+save_count = 0
 ep = 0
 while ep < NUM_EPISODES:
     start_time = time.time()
 
     state_0_cplt = env.reset()
     states = {'FSC': [], 'Shell': []}
-    # states_cplt = []
     rewards = {'FSC': [], 'Shell': []}
     actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
     step_actions = {'FSC': [], 'Shell': []}
@@ -91,15 +106,16 @@ while ep < NUM_EPISODES:
             states[key].append(state_0)
             step_actions.update({key: all_agents[key].get_actions(state_0)})
 
-        # perform action on environment
+        # perform action on environment and save
         state_1_cplt, r1, done, _ = env.step(step_actions)
-        # states_cplt.append(state_0_cplt) --> complete state can be saved for visualization purpose, maybe for testing
+        states_cplt.append(state_0_cplt)
         for agt in ACT_AGT:
             rewards[agt].append(r1[agt])
             for par_agt in actions[agt].keys():
                 actions[agt][par_agt].append(copy.copy(step_actions[agt][par_agt]))
 
-        # update state
+        # save and update old state state
+        states_cplt.append(state_0_cplt)
         state_0_cplt = state_1_cplt
 
         # if done (= new rollout complete), data is put into the batch
@@ -116,6 +132,7 @@ while ep < NUM_EPISODES:
 
             # if batch full (= enough rollouts for optimization), perform optimization on networks
             if batch_counter == BATCH_SIZE:
+                save_count += 1
                 # loop over all agents (1) and over the changeable allocation
                 for agt in ACT_AGT:
                     for par_agt in optimizers[agt].keys():
@@ -126,20 +143,41 @@ while ep < NUM_EPISODES:
 
                         # create tensors for calculation
                         reward_tensor = torch.FloatTensor(batch_returns[agt])
-                        # TODO: hier weitermachen: evtl actions um 1 hoch, damit als index
-                        action_tensor = torch.LongTensor(batch_actions[agt][par_agt])
+
+                        # create Long Tensor and add +1 to use action_tensor as indices
+                        action_tensor = torch.LongTensor(np.array(batch_actions[agt][par_agt])+1)
 
                         # calculate the loss
                         logprob = torch.log(all_agents[agt].predict(batch_states[agt], par_agt))
+                        # torch.gather to get the logprob to the corresponding action
+                        selected_logprobs = reward_tensor * torch.gather(logprob, 1,
+                                                                         action_tensor.unsqueeze(1)).squeeze()
+                        loss = -selected_logprobs.mean()
+
+                        # Calculate gradients
+                        loss.backward()
+
+                        # Apply gradients
+                        optimizers[agt][par_agt].step()
 
                 # empty batch
                 batch_returns = {'FSC': [], 'Shell': []}
                 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
                 batch_states = {'FSC': [], 'Shell': []}
-                batch_counter = 1
+                batch_counter = 0
+                print('-------------------------------     Update step completed.     -------------------------------')
+
+    ep += 1
 
     # Print moving average
     print('Episode {} complete in {:.3f} sec. Average of last 100: FSC: {:.3f}, Shell: {:.3f}'.
           format(ep, time.time() - start_time, np.mean(total_rewards['FSC'][-100:]),
                  np.mean(total_rewards['Shell'][-100:])))
-    ep += 1
+
+    # save data
+    if save_count == SAVE_INTERVAL:
+        save_count = 0
+        torch.save(all_agents, (SAVE_DIR / ('agents_ep_' + str(ep))))
+        torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
+    # TODO: save state_cplt, gesamter batch oder nur einzelne episoden? bisher states aller episoden gesammelt
+
