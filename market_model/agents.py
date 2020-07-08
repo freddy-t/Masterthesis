@@ -10,12 +10,10 @@ class Agent(object):
     def __init__(self, act_space, n_state):
         self.__state = None
         self.__n_neurons = 16
-        # TODO: nicht benötigte vars löschen und direkt übergeben
-        self.__n_state_space = n_state
         self.__action_space = act_space
 
         # Define network
-        self.__base_network = nn.Sequential(nn.Linear(self.__n_state_space, self.__n_neurons),
+        self.__base_network = nn.Sequential(nn.Linear(n_state, self.__n_neurons),
                                             nn.ReLU(),
                                             nn.Linear(self.__n_neurons, len(act_space)),
                                             nn.Softmax(dim=-1))
@@ -42,12 +40,15 @@ class Shell(Agent):
     def get_actions(self, state) -> dict:
         nets = self.__networks
         actions = dict()
+
+        # derive an action for each network (i.e., policy)
         for key in nets.keys():
             action_probs = self.predict(state, key).detach().numpy()
             actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})  #TODO: source of error?
         return actions
 
     def predict(self, state, partner_agt):
+        # get the action probabilities as a tensor
         action_probs = self.__networks[partner_agt](torch.FloatTensor(state))
         return action_probs
 
@@ -68,12 +69,15 @@ class FSC(Agent):
     def get_actions(self, state) -> dict:
         nets = self.__networks
         actions = dict()
+
+        # derive an action for each network (i.e., policy)
         for key in nets.keys():
             action_probs = self.predict(state, key).detach().numpy()
             actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})
         return actions
 
     def predict(self, state, partner_agt):
+        # get the action probabilities as a tensor
         action_probs = self.__networks[partner_agt](torch.FloatTensor(state))
         return action_probs
 

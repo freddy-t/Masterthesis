@@ -181,6 +181,8 @@ def load_data(agents: list) -> [pd.DataFrame, pd.DataFrame]:
 
 
 def load_shell(ld_df: pd.DataFrame) -> pd.DataFrame:
+    # TODO: load ROC, ROA und ROE
+
     # load excel and set index
     shell_orig = pd.read_excel(DATAFILE, 'shell', usecols=[1, 3, 5, 7]).set_index(['Date'])
 

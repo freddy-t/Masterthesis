@@ -8,7 +8,7 @@ from pathlib import Path
 def discount_rewards(rewards, gamma):
     # discount future rewards with gamma
     r = np.array([gamma**i * rewards[i] for i in range(len(rewards))])
-    # rotate rewards, calculate cumulative sum and rotate again, so that
+    # rotate rewards, calculate cumulative sum and rotate again, so that the return is calculated
     r = r[::-1].cumsum()[::-1]
 
     return r

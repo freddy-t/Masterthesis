@@ -14,26 +14,19 @@ AGENTS = ['FSC', 'Shell', 'Gov']
 CHANGEABLE_ALLOC = {'FSC':   ['Shell', 'Gov'],
                     'Shell': ['FSC'],
                     'Gov':   []}
-ACT_AGT = ['FSC', 'Shell']
+ACT_AGT = ['FSC', 'Shell']               # set the active agents
+INIT_SUPPORT = [[1, 0.1, 0.1]]           # initial support by the agents, must be in order as in AGENTS
 
-# initial support by the agents, must be in order as in AGENTS
-INIT_SUPPORT = [[1, 0.2, 0.1]]
-# initial resource assignment
-#       FSC  Shell  Gov
-# FSC
-# Shell
-# Gov
-INIT_RESOURCE = [[ 0.9,   0.1, 0],
-                 [0.05,   0.9, 0.05],
-                 [ 0.05,   0.1, 0.85]]
-
+# initial resource assignment            #       FSC  Shell  Gov
+INIT_RESOURCE = [[0.95,   0.05, 0.00],   # FSC
+                 [0.05,   0.90, 0.05],   # Shell
+                 [0.05,   0.10, 0.85]]   # Gov
 SUB_LVL = 0.05
 LENGTH_EPISODE = 10  # limit is 313
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
 BATCH_SIZE = 5
 GAMMA = 0.99
-
 SAVE_INTERVAL = 2  # numbers of updates until data/model is saved
 
 # TODO: andere Parameter zur Namensgebung übergeben?
@@ -48,11 +41,9 @@ num_states = len(AGENTS) + 1
 # ######################################################################################################################
 # ######################################################################################################################
 
-
-# create environment and set seed
+# create and setup environment
 env = gym.make('FSC_network-v0')
 env.setup(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE)
-# env.seed(42)
 
 # initialize agents and network optimizers and store them in dicts
 optimizers = dict()
@@ -70,18 +61,12 @@ for agt in AGENTS:
 # save initial agents
 torch.save(all_agents, (SAVE_DIR / 'agents_init'))
 
-# file = open(filename, 'wb')
-# pickle.dump(all_agents, file)
-# file.close()
-# fh = open(filename, 'rb')
-# test = pickle.load(fh)
-
 # init dicts for the both active agents
 total_rewards = {'FSC': [], 'Shell': []}
 states_cplt = []
 batch_returns = {'FSC': [], 'Shell': []}
 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
-batch_states  = {'FSC': [], 'Shell': []}
+batch_states = {'FSC': [], 'Shell': []}
 
 batch_counter = 0
 save_count = 0
@@ -98,23 +83,26 @@ while ep < NUM_EPISODES:
 
     while not done:
 
-        # get action from each agent
         for key in ACT_AGT:
             # extract support and resource assignment for agent as array
             state_0 = np.array(state_0_cplt[0].loc['support'][key])
             state_0 = np.append(state_0, state_0_cplt[1].loc[key])
             states[key].append(state_0)
-            step_actions.update({key: all_agents[key].get_actions(state_0)})
 
-        # perform action on environment and save
+            # get action from each agent and store it
+            step_actions.update({key: all_agents[key].get_actions(state_0)})
+            for par_agt in actions[agt].keys():
+                actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
+
+        # perform action on environment
         state_1_cplt, r1, done, _ = env.step(step_actions)
         states_cplt.append(state_0_cplt)
+
+        # store rewards
         for agt in ACT_AGT:
             rewards[agt].append(r1[agt])
-            for par_agt in actions[agt].keys():
-                actions[agt][par_agt].append(copy.copy(step_actions[agt][par_agt]))
 
-        # save and update old state state
+        # store and update old state
         states_cplt.append(state_0_cplt)
         state_0_cplt = state_1_cplt
 
@@ -133,11 +121,11 @@ while ep < NUM_EPISODES:
             # if batch full (= enough rollouts for optimization), perform optimization on networks
             if batch_counter == BATCH_SIZE:
                 save_count += 1
-                # loop over all agents (1) and over the changeable allocation
+                # loop over all agents and over the changeable allocation
                 for agt in ACT_AGT:
                     for par_agt in optimizers[agt].keys():
 
-                        # TODO von Kai abklären lassen ob das hier korrekt ist
+                        # TODO: @Kai correct until apply gradients?
                         # set gradients of all optimizers to zero
                         optimizers[agt][par_agt].zero_grad()
 
@@ -179,5 +167,11 @@ while ep < NUM_EPISODES:
         save_count = 0
         torch.save(all_agents, (SAVE_DIR / ('agents_ep_' + str(ep))))
         torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
-    # TODO: save state_cplt, gesamter batch oder nur einzelne episoden? bisher states aller episoden gesammelt
+    # TODO: weitermachen: save state_cplt, gesamter batch oder nur einzelne episoden? bisher states aller episoden gesammelt
 
+
+# file = open(filename, 'wb')
+# pickle.dump(all_agents, file)
+# file.close()
+# fh = open(filename, 'rb')
+# test = pickle.load(fh)
