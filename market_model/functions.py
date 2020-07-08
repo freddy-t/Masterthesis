@@ -16,11 +16,9 @@ def discount_rewards(rewards, gamma):
 
 def save_obj(path, obj):
     torch.save(obj, path)
-    # test = torch.load(filename)
-    # TODO: model must be evaluated eval() after loading
 
 
-def create_dir():
+def create_dir(n_ep, l_ep):
     # function creates directory to store data of the training/testing
     dir_path = Path('../saved_data') / str(datetime.datetime.now().date())
 
@@ -28,12 +26,12 @@ def create_dir():
     n_folders = 0
     if not dir_path.is_dir():
         os.mkdir(dir_path)
-        save_dir = dir_path / (str(n_folders) + '_')
+        save_dir = dir_path / (str(1) + '_n_ep_' + str(n_ep) + '_l_ep_' + str(l_ep))
         os.mkdir(save_dir)
     else:
         for _, dirnames, _ in os.walk(dir_path):
             n_folders += len(dirnames)
-        save_dir = dir_path / (str(n_folders+1) + '_')
+        save_dir = dir_path / (str(n_folders+1) + '_n_ep_' + str(n_ep) + '_l_ep_' + str(l_ep))
         os.mkdir(save_dir)
 
     return save_dir

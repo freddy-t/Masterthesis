@@ -22,16 +22,26 @@ INIT_RESOURCE = [[0.95,   0.05, 0.00],   # FSC
                  [0.05,   0.90, 0.05],   # Shell
                  [0.05,   0.10, 0.85]]   # Gov
 SUB_LVL = 0.05
-LENGTH_EPISODE = 10  # limit is 313
+LENGTH_EPISODE = 100  # limit is 313
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
-BATCH_SIZE = 5
+BATCH_SIZE = 10
 GAMMA = 0.99
-SAVE_INTERVAL = 2  # numbers of updates until data/model is saved
+SAVE_INTERVAL = 5  # numbers of updates until data/model is saved
+
+CONFIG = {'init_support': INIT_SUPPORT,
+          'init_resource': INIT_RESOURCE,
+          'sub_lvl': SUB_LVL,
+          'length_ep': LENGTH_EPISODE,
+          'n_ep': NUM_EPISODES,
+          'lr': LEARNING_RATE,
+          'batch_size': BATCH_SIZE,
+          'gamma': GAMMA}
 
 # TODO: andere Parameter zur Namensgebung übergeben?
-# create saving directory
-SAVE_DIR = create_dir()
+# create saving directory and save config
+SAVE_DIR = create_dir(NUM_EPISODES, LENGTH_EPISODE)
+torch.save(CONFIG, (SAVE_DIR / 'config'))
 
 # pre-allocation
 action_space = [-1, 0, 1]  # action definition: -1 = decrease, 0 = maintain, 1 = increase
@@ -63,7 +73,6 @@ torch.save(all_agents, (SAVE_DIR / 'agents_init'))
 
 # init dicts for the both active agents
 total_rewards = {'FSC': [], 'Shell': []}
-states_cplt = []
 batch_returns = {'FSC': [], 'Shell': []}
 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
 batch_states = {'FSC': [], 'Shell': []}
@@ -74,6 +83,7 @@ ep = 0
 while ep < NUM_EPISODES:
     start_time = time.time()
 
+    states_cplt = []
     state_0_cplt = env.reset()
     states = {'FSC': [], 'Shell': []}
     rewards = {'FSC': [], 'Shell': []}
@@ -91,7 +101,7 @@ while ep < NUM_EPISODES:
 
             # get action from each agent and store it
             step_actions.update({key: all_agents[key].get_actions(state_0)})
-            for par_agt in actions[agt].keys():
+            for par_agt in actions[key].keys():
                 actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
 
         # perform action on environment
@@ -158,16 +168,17 @@ while ep < NUM_EPISODES:
     ep += 1
 
     # Print moving average
-    print('Episode {} complete in {:.3f} sec. Average of last 100: FSC: {:.3f}, Shell: {:.3f}'.
-          format(ep, time.time() - start_time, np.mean(total_rewards['FSC'][-100:]),
-                 np.mean(total_rewards['Shell'][-100:])))
+    if ep % 10 == 0:
+        print('Episode {} complete in {:.3f} sec. Average of last 100: FSC: {:.3f}, Shell: {:.3f}'.
+              format(ep, time.time() - start_time, np.mean(total_rewards['FSC'][-100:]),
+                     np.mean(total_rewards['Shell'][-100:])))
 
     # save data
     if save_count == SAVE_INTERVAL:
         save_count = 0
         torch.save(all_agents, (SAVE_DIR / ('agents_ep_' + str(ep))))
         torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
-    # TODO: weitermachen: save state_cplt, gesamter batch oder nur einzelne episoden? bisher states aller episoden gesammelt
+        torch.save(states_cplt, (SAVE_DIR / ('states_cplt_ep_' + str(ep))))
 
 
 # file = open(filename, 'wb')
