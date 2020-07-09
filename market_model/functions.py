@@ -18,9 +18,15 @@ def save_obj(path, obj):
     torch.save(obj, path)
 
 
-def create_dir(n_ep, l_ep):
+def create_dir(n_ep, l_ep, debug_flag):
     # function creates directory to store data of the training/testing
     dir_path = Path('../saved_data') / str(datetime.datetime.now().date())
+
+    if debug_flag:
+        bug_path = Path('../saved_data') / (str(datetime.datetime.now().date()) + '_debug')
+        if not bug_path.is_dir():
+            os.mkdir(bug_path)
+        return bug_path
 
     # create directory for the current date or create a new directory in the current date directory
     n_folders = 0

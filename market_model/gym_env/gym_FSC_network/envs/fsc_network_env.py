@@ -133,8 +133,8 @@ class FSCNetworkEnv(gym.Env):
             sd_data = self._shared_data_test
             sl_data = self._shell_data_test
 
-        # calculate reward for FSC
-        r = {'FSC': obs[0].loc['support'].sum()}
+        # calculate reward for FSC, subtract support of FSC as it is not changing
+        r = {'FSC': obs[0].loc['support'].sum() - 1}
 
         # calculate reward for Shell
         own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *

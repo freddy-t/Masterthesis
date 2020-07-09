@@ -6,9 +6,12 @@ import time
 import numpy as np
 import gym_FSC_network
 from functions import discount_rewards, create_dir, save_obj
+from torch.utils.tensorboard import SummaryWriter
 
 # TODO: ?resource and support initialize in env and check if keys are matching
 # TODO: if gov should be active: look for "passiv" and change the lines
+# to run tensorboard:
+# cmd command: tensorboard --logdir=C:\Users\fredd\PycharmProjects\Masterthesis\saved_data\2020-07-09
 
 AGENTS = ['FSC', 'Shell', 'Gov']
 CHANGEABLE_ALLOC = {'FSC':   ['Shell', 'Gov'],
@@ -22,12 +25,12 @@ INIT_RESOURCE = [[0.95,   0.05, 0.00],   # FSC
                  [0.05,   0.90, 0.05],   # Shell
                  [0.05,   0.10, 0.85]]   # Gov
 SUB_LVL = 0.05
-LENGTH_EPISODE = 100  # limit is 313
+LENGTH_EPISODE = 10  # limit is 313
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
 BATCH_SIZE = 10
 GAMMA = 0.99
-SAVE_INTERVAL = 5  # numbers of updates until data/model is saved
+SAVE_INTERVAL = 2  # numbers of updates until data/model is saved
 
 CONFIG = {'init_support': INIT_SUPPORT,
           'init_resource': INIT_RESOURCE,
@@ -38,9 +41,9 @@ CONFIG = {'init_support': INIT_SUPPORT,
           'batch_size': BATCH_SIZE,
           'gamma': GAMMA}
 
-# TODO: andere Parameter zur Namensgebung übergeben?
 # create saving directory and save config
-SAVE_DIR = create_dir(NUM_EPISODES, LENGTH_EPISODE)
+DEBUG = True
+SAVE_DIR = create_dir(NUM_EPISODES, LENGTH_EPISODE, DEBUG)
 torch.save(CONFIG, (SAVE_DIR / 'config'))
 
 # pre-allocation
@@ -52,6 +55,7 @@ num_states = len(AGENTS) + 1
 # ######################################################################################################################
 
 # create and setup environment
+writer = SummaryWriter(SAVE_DIR)
 env = gym.make('FSC_network-v0')
 env.setup(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE)
 
@@ -77,8 +81,9 @@ batch_returns = {'FSC': [], 'Shell': []}
 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
 batch_states = {'FSC': [], 'Shell': []}
 
-batch_counter = 0
+batch_count = 0
 save_count = 0
+optim_count = 0
 ep = 0
 while ep < NUM_EPISODES:
     start_time = time.time()
@@ -125,11 +130,13 @@ while ep < NUM_EPISODES:
                 for par_agt in actions[agt].keys():
                     batch_actions[agt][par_agt].extend(actions[agt][par_agt])
                 total_rewards[agt].append(np.array(rewards[agt]).sum())
+                # TODO: test
+                writer.add_scalar('reward_FSC', np.array(rewards['FSC']).sum(), ep)
 
-            batch_counter += 1
+            batch_count += 1
 
             # if batch full (= enough rollouts for optimization), perform optimization on networks
-            if batch_counter == BATCH_SIZE:
+            if batch_count == BATCH_SIZE:
                 save_count += 1
                 # loop over all agents and over the changeable allocation
                 for agt in ACT_AGT:
@@ -158,11 +165,13 @@ while ep < NUM_EPISODES:
                         # Apply gradients
                         optimizers[agt][par_agt].step()
 
+                        optim_count += 1
+
                 # empty batch
                 batch_returns = {'FSC': [], 'Shell': []}
                 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
                 batch_states = {'FSC': [], 'Shell': []}
-                batch_counter = 0
+                batch_count = 0
                 print('-------------------------------     Update step completed.     -------------------------------')
 
     ep += 1
@@ -174,15 +183,26 @@ while ep < NUM_EPISODES:
                      np.mean(total_rewards['Shell'][-100:])))
 
     # save data
-    if save_count == SAVE_INTERVAL:
-        save_count = 0
+    if (optim_count % SAVE_INTERVAL == 0) and (optim_count != 0):
+        # writer.add_histogram('FSC_Shell_linear1.weight', all_agents['FSC'].get_networks()['Shell'][0].weight,
+        #                      optim_count)
+        # writer.add_histogram('FSC_Shell_linear1.bias', all_agents['FSC'].get_networks()['Shell'][0].bias,
+        #                      optim_count)
+        # writer.add_histogram('FSC_Shell_linear2.weight', all_agents['FSC'].get_networks()['Shell'][2].weight,
+        #                      optim_count)
+        # writer.add_histogram('FSC_Shell_linear2.bias', all_agents['FSC'].get_networks()['Shell'][2].bias,
+        #                      optim_count)
+        for name, weight in all_agents['FSC'].get_networks()['Shell'].named_parameters():
+            writer.add_histogram(name, weight, optim_count)
+            writer.add_histogram(f'{name}.grad', weight.grad, optim_count)
+            print(weight)
+            print(name)
+            print(weight.grad)
+            # TODO: untersuchen und verstehen, was in tensorboard angezeigt wird und was reingeschrieben wird
+
+        writer.flush()
         torch.save(all_agents, (SAVE_DIR / ('agents_ep_' + str(ep))))
         torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
         torch.save(states_cplt, (SAVE_DIR / ('states_cplt_ep_' + str(ep))))
 
-
-# file = open(filename, 'wb')
-# pickle.dump(all_agents, file)
-# file.close()
-# fh = open(filename, 'rb')
-# test = pickle.load(fh)
+writer.close()

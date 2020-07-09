@@ -43,7 +43,7 @@ class Shell(Agent):
 
         # derive an action for each network (i.e., policy)
         for key in nets.keys():
-            action_probs = self.predict(state, key).detach().numpy()
+            action_probs = self.predict(state, key).detach().numpy() #TODO: was macht detach() hier? wird etwas weggeschnitten, was nicht soll?
             actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})  #TODO: source of error?
         return actions
 
