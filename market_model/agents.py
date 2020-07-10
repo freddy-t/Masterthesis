@@ -43,8 +43,10 @@ class Shell(Agent):
 
         # derive an action for each network (i.e., policy)
         for key in nets.keys():
-            action_probs = self.predict(state, key).detach().numpy() #TODO: was macht detach() hier? wird etwas weggeschnitten, was nicht soll?
-            actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})  #TODO: source of error?
+            # detach() should not be a problem hear, as for optimization predict() is called again,
+            # where no detach() is used
+            action_probs = self.predict(state, key).detach().numpy()
+            actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})
         return actions
 
     def predict(self, state, partner_agt):

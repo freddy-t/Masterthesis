@@ -12,7 +12,7 @@ print("PyTorch:\t{}".format(torch.__version__))
 class PolicyEstimator:
     def __init__(self, env):
         self.n_inputs = env.observation_space.shape[0]
-        self.n_outputs = env.action_space.n
+        self.n_outputs = env.ACTION_SPACE.n
 
         # Define network
         self.network = nn.Sequential(
@@ -45,7 +45,7 @@ def reinforce(env, policy_estimator, num_episodes=2000, batch_size=10, gamma=0.9
     # Define optimizer
     optimizer = optim.Adam(policy_estimator.network.parameters(), lr=0.01)
 
-    action_space = np.arange(env.action_space.n)
+    action_space = np.arange(env.ACTION_SPACE.n)
     ep = 0
     while ep < num_episodes:
         s_0 = env.reset()

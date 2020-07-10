@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import datetime
 import os
+import shutil
 from pathlib import Path
 
 
@@ -18,13 +19,17 @@ def save_obj(path, obj):
     torch.save(obj, path)
 
 
-def create_dir(n_ep, l_ep, debug_flag):
+def create_dir(debug_flag, n_ep, l_ep, lr):
     # function creates directory to store data of the training/testing
     dir_path = Path('../saved_data') / str(datetime.datetime.now().date())
 
+    # create directory for debugging purposes by deleting or just creating it
     if debug_flag:
         bug_path = Path('../saved_data') / (str(datetime.datetime.now().date()) + '_debug')
         if not bug_path.is_dir():
+            os.mkdir(bug_path)
+        else:
+            shutil.rmtree(bug_path)
             os.mkdir(bug_path)
         return bug_path
 
@@ -32,12 +37,12 @@ def create_dir(n_ep, l_ep, debug_flag):
     n_folders = 0
     if not dir_path.is_dir():
         os.mkdir(dir_path)
-        save_dir = dir_path / (str(1) + '_n_ep_' + str(n_ep) + '_l_ep_' + str(l_ep))
+        save_dir = dir_path / (str(1) + '_n_ep' + str(n_ep) + '_l_ep' + str(l_ep) + '_lr' + str(lr))
         os.mkdir(save_dir)
     else:
         for _, dirnames, _ in os.walk(dir_path):
             n_folders += len(dirnames)
-        save_dir = dir_path / (str(n_folders+1) + '_n_ep_' + str(n_ep) + '_l_ep_' + str(l_ep))
+        save_dir = dir_path / (str(n_folders+1) + '_n_ep' + str(n_ep) + '_l_ep' + str(l_ep) + '_lr' + str(lr))
         os.mkdir(save_dir)
 
     return save_dir

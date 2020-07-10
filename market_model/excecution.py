@@ -10,14 +10,15 @@ from torch.utils.tensorboard import SummaryWriter
 
 # TODO: ?resource and support initialize in env and check if keys are matching
 # TODO: if gov should be active: look for "passiv" and change the lines
-# to run tensorboard:
-# cmd command: tensorboard --logdir=C:\Users\fredd\PycharmProjects\Masterthesis\saved_data\2020-07-09
+# to run tensorboard use following cmd command:
+# tensorboard --logdir=C:\Users\fredd\PycharmProjects\Masterthesis\saved_data
 
 AGENTS = ['FSC', 'Shell', 'Gov']
 CHANGEABLE_ALLOC = {'FSC':   ['Shell', 'Gov'],
                     'Shell': ['FSC'],
                     'Gov':   []}
 ACT_AGT = ['FSC', 'Shell']               # set the active agents
+ACTION_SPACE = [-1, 0, 1]                # action definition: -1 = decrease, 0 = maintain, 1 = increase
 INIT_SUPPORT = [[1, 0.1, 0.1]]           # initial support by the agents, must be in order as in AGENTS
 
 # initial resource assignment            #       FSC  Shell  Gov
@@ -25,12 +26,12 @@ INIT_RESOURCE = [[0.95,   0.05, 0.00],   # FSC
                  [0.05,   0.90, 0.05],   # Shell
                  [0.05,   0.10, 0.85]]   # Gov
 SUB_LVL = 0.05
-LENGTH_EPISODE = 10  # limit is 313
+LENGTH_EPISODE = 100  # limit is 313
 NUM_EPISODES = 1000
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.01
 BATCH_SIZE = 10
 GAMMA = 0.99
-SAVE_INTERVAL = 2  # numbers of updates until data/model is saved
+SAVE_INTERVAL = 1  # numbers of updates until data/model is saved
 
 CONFIG = {'init_support': INIT_SUPPORT,
           'init_resource': INIT_RESOURCE,
@@ -39,20 +40,19 @@ CONFIG = {'init_support': INIT_SUPPORT,
           'n_ep': NUM_EPISODES,
           'lr': LEARNING_RATE,
           'batch_size': BATCH_SIZE,
-          'gamma': GAMMA}
+          'gamma': GAMMA,
+          'save_interval': SAVE_INTERVAL}
 
 # create saving directory and save config
-DEBUG = True
-SAVE_DIR = create_dir(NUM_EPISODES, LENGTH_EPISODE, DEBUG)
+DEBUG = False
+SAVE_DIR = create_dir(DEBUG, NUM_EPISODES, LENGTH_EPISODE, LEARNING_RATE)
 torch.save(CONFIG, (SAVE_DIR / 'config'))
 
-# pre-allocation
-action_space = [-1, 0, 1]  # action definition: -1 = decrease, 0 = maintain, 1 = increase
-num_states = len(AGENTS) + 1
-
 # ######################################################################################################################
 # ######################################################################################################################
 # ######################################################################################################################
+# start timer
+start_time_tot = time.time()
 
 # create and setup environment
 writer = SummaryWriter(SAVE_DIR)
@@ -64,7 +64,7 @@ optimizers = dict()
 all_agents = dict()
 for agt in AGENTS:
     agt_optim = dict()
-    all_agents.update({agt: eval('agents.' + agt)(action_space, num_states, CHANGEABLE_ALLOC[agt])})
+    all_agents.update({agt: eval('agents.' + agt)(ACTION_SPACE, len(AGENTS) + 1, CHANGEABLE_ALLOC[agt])})
     # gov is passiv agent, thus need no optimizer
     if agt != 'Gov':
         networks = all_agents[agt].get_networks()
@@ -75,16 +75,16 @@ for agt in AGENTS:
 # save initial agents
 torch.save(all_agents, (SAVE_DIR / 'agents_init'))
 
-# init dicts for the both active agents
+# init dicts with the active agents
 total_rewards = {'FSC': [], 'Shell': []}
 batch_returns = {'FSC': [], 'Shell': []}
 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
 batch_states = {'FSC': [], 'Shell': []}
 
 batch_count = 0
-save_count = 0
 optim_count = 0
 ep = 0
+store_graph = False
 while ep < NUM_EPISODES:
     start_time = time.time()
 
@@ -130,14 +130,17 @@ while ep < NUM_EPISODES:
                 for par_agt in actions[agt].keys():
                     batch_actions[agt][par_agt].extend(actions[agt][par_agt])
                 total_rewards[agt].append(np.array(rewards[agt]).sum())
-                # TODO: test
+
+                # write rewards to tensorboard
                 writer.add_scalar('reward_FSC', np.array(rewards['FSC']).sum(), ep)
+                writer.add_scalar('reward_Shell', np.array(rewards['Shell']).sum(), ep)
 
             batch_count += 1
 
             # if batch full (= enough rollouts for optimization), perform optimization on networks
             if batch_count == BATCH_SIZE:
-                save_count += 1
+
+                optim_count += 1
                 # loop over all agents and over the changeable allocation
                 for agt in ACT_AGT:
                     for par_agt in optimizers[agt].keys():
@@ -154,7 +157,7 @@ while ep < NUM_EPISODES:
 
                         # calculate the loss
                         logprob = torch.log(all_agents[agt].predict(batch_states[agt], par_agt))
-                        # torch.gather to get the logprob to the corresponding action
+                        # use torch.gather to get the logprob to the corresponding action
                         selected_logprobs = reward_tensor * torch.gather(logprob, 1,
                                                                          action_tensor.unsqueeze(1)).squeeze()
                         loss = -selected_logprobs.mean()
@@ -165,7 +168,21 @@ while ep < NUM_EPISODES:
                         # Apply gradients
                         optimizers[agt][par_agt].step()
 
-                        optim_count += 1
+                        # write loss to tensorboard after each optimization step
+                        writer.add_scalar('mean_loss_' + agt + '_' + par_agt, loss, optim_count)
+
+                        # save specific data after SAVE_INTERVAL number of optimization steps
+                        if optim_count % SAVE_INTERVAL == 0:
+                            # save weights and its gradients for tensorboard
+                            for name, weight in all_agents[agt].get_networks()[par_agt].named_parameters():
+                                writer.add_histogram(agt + '_' + par_agt + '_' + name, weight, optim_count)
+                                writer.add_histogram(agt + '_' + par_agt + '_' + name + '_grad', weight.grad,
+                                                     optim_count)
+
+                            # save agents, all states and rewards
+                            torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep+1)))
+                            torch.save(states_cplt, (SAVE_DIR / 'states_cplt_optim{}_ep{}'.format(optim_count, ep+1)))
+                            torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
 
                 # empty batch
                 batch_returns = {'FSC': [], 'Shell': []}
@@ -182,27 +199,14 @@ while ep < NUM_EPISODES:
               format(ep, time.time() - start_time, np.mean(total_rewards['FSC'][-100:]),
                      np.mean(total_rewards['Shell'][-100:])))
 
-    # save data
-    if (optim_count % SAVE_INTERVAL == 0) and (optim_count != 0):
-        # writer.add_histogram('FSC_Shell_linear1.weight', all_agents['FSC'].get_networks()['Shell'][0].weight,
-        #                      optim_count)
-        # writer.add_histogram('FSC_Shell_linear1.bias', all_agents['FSC'].get_networks()['Shell'][0].bias,
-        #                      optim_count)
-        # writer.add_histogram('FSC_Shell_linear2.weight', all_agents['FSC'].get_networks()['Shell'][2].weight,
-        #                      optim_count)
-        # writer.add_histogram('FSC_Shell_linear2.bias', all_agents['FSC'].get_networks()['Shell'][2].bias,
-        #                      optim_count)
-        for name, weight in all_agents['FSC'].get_networks()['Shell'].named_parameters():
-            writer.add_histogram(name, weight, optim_count)
-            writer.add_histogram(f'{name}.grad', weight.grad, optim_count)
-            print(weight)
-            print(name)
-            print(weight.grad)
-            # TODO: untersuchen und verstehen, was in tensorboard angezeigt wird und was reingeschrieben wird
+    # save a graph to tensorboard (just for visualisation)
+    if store_graph:
+        store_graph = False
+        writer.add_graph(all_agents['FSC'].get_networks()['Shell'], torch.FloatTensor(states['FSC'][0]))
 
-        writer.flush()
-        torch.save(all_agents, (SAVE_DIR / ('agents_ep_' + str(ep))))
-        torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
-        torch.save(states_cplt, (SAVE_DIR / ('states_cplt_ep_' + str(ep))))
+    # flush the writer, so that everything is written to tensorboard
+    writer.flush()
 
 writer.close()
+# TODO: save total time
+print('Total time: {:.3f}'.format(time.time() - start_time_tot))
