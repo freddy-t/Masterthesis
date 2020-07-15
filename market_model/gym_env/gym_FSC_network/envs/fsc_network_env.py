@@ -24,13 +24,14 @@ class FSCNetworkEnv(gym.Env):
         self._support = None
         self._resource = None
         self._episode_len = None
-        self._delta_resource = 0.005
-        self._support_factor = 0.1
+        self._delta_resource = None
+        self._support_factor = None
         self._mode = 'train'
         self._current_step = None
         self._sub_lvl = None
 
     def step(self, actions):
+        # TODO: change all self. operations to local variables and see how fast the code is afterwards, gleiches gilt für calc_reward
 
         # set the support based on the previous resource assignment -> Therefore, it is the first calculation.
         orig_support = copy.copy(self._support)
@@ -104,11 +105,13 @@ class FSCNetworkEnv(gym.Env):
     def render(self, mode='human', close=False):
         pass
 
-    def setup(self, agt: list, init_sup: list, init_res, sub_lvl, ep_len):
+    def setup(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fac):
         # setup the environment
         shared, shell = load_data(agt)
         self._sub_lvl = sub_lvl
         self._episode_len = ep_len
+        self._delta_resource = delta_res
+        self._support_factor = sup_fac
 
         # split to train and test data
         self._shared_data_train, self._shared_data_test = split_data(shared)
