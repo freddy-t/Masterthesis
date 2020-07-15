@@ -7,10 +7,12 @@ from pathlib import Path
 # TODO: model must be evaluated eval() after loading
 # TODO: script verschönern
 
-LOAD_DIR = Path('../saved_data/2020-07-14/1_n_ep1000_l_ep100_lr0.001')
+LOAD_DIR = Path('../saved_data/2020-07-15/3_n_ep1000_l_ep100_lr0.001')
 
+# load general data
 config = torch.load(LOAD_DIR / 'config')
 total_rewards = torch.load(LOAD_DIR / 'tot_r')
+times = torch.load(LOAD_DIR / 'running_times')
 
 # plots = []
 # plot total rewards of active agents and the rolling mean
@@ -49,84 +51,74 @@ total_rewards = torch.load(LOAD_DIR / 'tot_r')
 # weight_diff = agents[0]['FSC'].get_networks()['Shell'][0].weight.detach().numpy() - \
 #               agents[1]['FSC'].get_networks()['Shell'][0].weight.detach().numpy()
 
-# TODO: als graph schön visualisieren?
-# plot history of states of specific episode
-# versions = ['optim0_ep10', 'optim99_ep1000']
-# states_cplt = dict()
-# support = dict()
-# for version in versions:
-#     states_cplt.update({version: torch.load(LOAD_DIR / ('states_cplt_' + version))})
-#     tmp = dict()
-#     for agt in config['agents']:
-#         support.update({agt: [i[0].loc['support', agt] for i in states_cplt]})
-#
-#
-#
+
+# load state data
+versions = ['optim1', 'optim100']
+states = dict()
+for version in versions:
+    states.update({version: torch.load(LOAD_DIR / ('batch_states_' + version))})
+
+# create plots for support
 state_plots = []
-# state_plots.append(plt.figure(1))
-# for agt in config['agents']:
-#
-# plt.plot(sup_fsc, label='FSC')
-# plt.plot(sup_shell, label='Shell')
-# plt.plot(sup_gov, label='Gov')
-# plt.legend()
-# plt.title('support of agents - optim0_ep10')
-# plt.xlabel('episode')
-# plt.ylabel('level of support')
-# state_plots[0].show()
-#
-# # TODO: beides in eine gemeinsame schleife
-# resources = dict()
-# tmp = dict()
-# for agt in config['active_agents']:
-#     for par_agt in states_cplt[1][1].index:
-#         tmp.update({par_agt: [i[1].loc[agt, par_agt] for i in states_cplt]})
-#     resources.update({agt: copy.copy(tmp)})
-#
-# i = 2
-# for agt in config['active_agents']:
-#     state_plots.append(plt.figure(i))
-#     for par_agt in states_cplt[1][1].index:
-#         plt.plot(resources[agt][par_agt], label=par_agt)
-#     plt.title('resource allocation - ' + agt + ' - optim0_ep10')
-#     plt.xlabel('episode')
-#     plt.legend()
-#     state_plots[i-1].show()
-#     i += 1
+fig_count = 1
+# loop over all versions
+for version in versions:
+    fig = plt.figure(fig_count, figsize=(12, 4))
+    state_plots.append(fig)
+    fig_count += 1
+    # create two axes
+    ax = [fig.add_subplot(121), fig.add_subplot(122)]
+    # loop over each agent
+    for key in config['agents']:
+        # calculate mean and std for support
+        mean = states[version][key].mean(axis=0)[:, 0]
+        std = states[version][key].std(axis=0)[:, 0]
+        x = range(0, states[version][key].shape[1])
+        # plot mean
+        ax[0].plot(mean, label=key)
+        ax[1].plot(mean, label=key)
+        # plot std as an area
+        ax[0].fill_between(x, mean+std, mean-std, alpha=0.2)
+        # plot max and min as an area
+        ax[1].fill_between(x, states[version][key].max(axis=0)[:, 0],
+                           states[version][key].min(axis=0)[:, 0], alpha=0.2)
+    # set some plot properties
+    fig.suptitle('support of agents - ' + version)
+    ax[0].set_title('mean and standard deviation')
+    ax[1].set_title('mean and max-min')
+    for axis in fig.get_axes():
+        axis.set_xlabel('episode')
+        axis.set_ylabel('level of support')
+        axis.legend()
 
-version = 'optim99_ep1000'
-states_cplt = torch.load(LOAD_DIR / ('states_cplt_' + version))
+# plot first two plots
+state_plots[0].show()
+state_plots[1].show()
 
-sup_fsc = [i[0].loc['support', 'FSC'] for i in states_cplt]
-sup_shell = [i[0].loc['support', 'Shell'] for i in states_cplt]
-sup_gov = [i[0].loc['support', 'Gov'] for i in states_cplt]
-i=1
-state_plots.append(plt.figure(i))
-plt.plot(sup_fsc, label='FSC')
-plt.plot(sup_shell, label='Shell')
-plt.plot(sup_gov, label='Gov')
-plt.legend()
-plt.title('support of agents - optim99_ep1000')
-plt.xlabel('episode')
-plt.ylabel('level of support')
-state_plots[i-1].show()
-i += 1
+# loop over all versions
+for version in versions:
+    fig = plt.figure(fig_count, figsize=(12, 4))
+    state_plots.append(fig)
+    # create new axes
+    ax = [fig.add_subplot(121), fig.add_subplot(122)]
+    fig_count += 1
 
-# TODO: beides in eine gemeinsame schleife
-resources = dict()
-tmp = dict()
-for agt in config['active_agents']:
-    for par_agt in states_cplt[1][1].index:
-        tmp.update({par_agt: [i[1].loc[agt, par_agt] for i in states_cplt]})
-    resources.update({agt: copy.copy(tmp)})
+    for i, key in enumerate(config['active_agents']):
+        # calculate mean of resource assignment to the different partner agents
+        x = range(0, states[version][key].shape[1])
+        fsc = states[version][key].mean(axis=0)[:, 1]
+        shell = states[version][key].mean(axis=0)[:, 2]
+        gov = states[version][key].mean(axis=0)[:, 3]
 
-for agt in config['active_agents']:
-    state_plots.append(plt.figure(i))
-    for par_agt in states_cplt[1][1].index:
-        plt.plot(resources[agt][par_agt], label=par_agt)
-    plt.title('resource allocation - ' + agt + ' - optim99_ep1000')
-    plt.xlabel('episode')
-    plt.legend()
-    state_plots[i-1].show()
-    i += 1
+        # create stacked plots
+        ax[i].stackplot(x, gov + shell + fsc)
+        ax[i].stackplot(x, gov + shell)
+        ax[i].stackplot(x, gov)
+        ax[i].set_title(key)
+        ax[i].legend(['FSC', 'Shell', 'Gov'], loc='center')
+    fig.suptitle('mean resource allocation for batch - ' + version)
+
+# plot last
+state_plots[2].show()
+state_plots[3].show()
 pass

@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 # to run tensorboard use following cmd command:
 # tensorboard --logdir=C:\Users\fredd\PycharmProjects\Masterthesis\saved_data
 
-DEBUG = True
+DEBUG = False
 store_graph = False
 
 # model parameters
@@ -37,12 +37,12 @@ DELTA_RESOURCE = 0.005                   # factor by which resource assignment i
 SUPPORT_FACTOR = 0.1                     # factor influences how fast support is changed due to agents interaction
 
 # RL parameters
-LENGTH_EPISODE = 5  # limit is 313
+LENGTH_EPISODE = 100                     # limit is 313
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
-BATCH_SIZE = 3
+BATCH_SIZE = 10
 GAMMA = 0.99
-SAVE_INTERVAL = 1  # numbers of updates until data/model is saved
+SAVE_INTERVAL = 1                        # numbers of updates until data/model is saved
 
 CONFIG = {'agents': AGENTS,
           'active_agents': ACT_AGT,
@@ -68,8 +68,6 @@ with open((SAVE_DIR / 'config.txt'), 'w') as file:
 # ######################################################################################################################
 # ######################################################################################################################
 # ######################################################################################################################
-# start timer
-start_time_tot = time.time()
 
 # create and setup environment
 writer = SummaryWriter(SAVE_DIR)
@@ -100,14 +98,15 @@ batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
 batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
                 'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states])}
-
 batch_count = 0
 optim_count = 0
+step_count = 0
 ep = 0
-step = 0
 states_cplt = []
+times = []
 # TODO: pre allocate everything that is possible --> get ride of extend() and append()
 while ep < NUM_EPISODES:
+    ep += 1
     start_time = time.time()
 
     state_0_cplt = env.reset()
@@ -124,7 +123,7 @@ while ep < NUM_EPISODES:
             # extract support and resource assignment for agent as array
             state_0 = np.array(state_0_cplt[0].loc['support'][key])
             state_0 = np.append(state_0, state_0_cplt[1].loc[key])
-            states[key][step] = state_0
+            states[key][step_count] = state_0
             if key != 'Gov':
                 # get action from each agent and store it
                 step_actions.update({key: all_agents[key].get_actions(state_0)})
@@ -141,11 +140,11 @@ while ep < NUM_EPISODES:
         # store and update old state
         states_cplt.append(state_0_cplt)
         state_0_cplt = state_1_cplt
-        step += 1
+        step_count += 1
 
         # if done (= new rollout complete), data is put into the batch
         if done:
-            step = 0
+            step_count = 0
             # put data in batch
             for agt in AGENTS:
                 batch_states[agt][batch_count] = states[agt]
@@ -179,7 +178,8 @@ while ep < NUM_EPISODES:
                         action_tensor = torch.LongTensor(np.array(batch_actions[agt][par_agt])+1)
 
                         # calculate the loss
-                        logprob = torch.log(all_agents[agt].predict(batch_states[agt], par_agt))
+                        logprob = torch.log(all_agents[agt].predict(
+                            batch_states[agt].reshape([BATCH_SIZE*LENGTH_EPISODE, num_states]), par_agt))
                         # use torch.gather to get the logprob to the corresponding action
                         selected_logprobs = reward_tensor * torch.gather(logprob, 1,
                                                                          action_tensor.unsqueeze(1)).squeeze()
@@ -205,26 +205,28 @@ while ep < NUM_EPISODES:
 
                 # save agents, all states and rewards after SAVE_INTERVAL number of optimization steps
                 if optim_count % SAVE_INTERVAL == 0:
-                    torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep+1)))
+                    torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep)))
                     torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
-                    # minus one as the states are not coming from using the agents
-                    # from the optimization step before
-                    torch.save(states_cplt, (SAVE_DIR / 'states_cplt_optim{}_ep{}'.format(optim_count-1, ep+1)))
+                    torch.save(batch_states, (SAVE_DIR / 'batch_states_optim{}'.format(optim_count)))
 
                 # empty batch
                 batch_returns = {'FSC': [], 'Shell': []}
                 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
-                batch_states = {'FSC': [], 'Shell': [], 'Gov': []}
+                batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
+                                'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
+                                'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states])}
                 batch_count = 0
                 print('-------------------------------     Update step completed.     -------------------------------')
 
-    ep += 1
+    # take time and save it
+    times.append(time.time() - start_time)
+    torch.save(times, (SAVE_DIR / 'running_times'))
 
     # Print moving average
     if ep % 10 == 0:
-        print('Episode {} complete in {:.3f} sec. Average of last 100: FSC: {:.3f}, Shell: {:.3f}'.
-              format(ep, time.time() - start_time, np.mean(total_rewards['FSC'][-100:]),
-                     np.mean(total_rewards['Shell'][-100:])))
+        print('Episode {} complete. Avg time of last 10: {:.3f} sec. Average reward of last 100:'
+              ' FSC: {:.3f}, Shell: {:.3f}'.format(ep, np.mean(times[-10:]), np.mean(total_rewards['FSC'][-100:]),
+                                                   np.mean(total_rewards['Shell'][-100:])))
 
     # save a graph to tensorboard (just for visualisation)
     if store_graph:
@@ -235,5 +237,4 @@ while ep < NUM_EPISODES:
     writer.flush()
 
 writer.close()
-# TODO: save total time
-print('Total time: {:.3f}'.format(time.time() - start_time_tot))
+print('Total time: {:.3f}'.format(np.sum(times)))
