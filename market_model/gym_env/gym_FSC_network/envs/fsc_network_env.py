@@ -1,140 +1,41 @@
 import gym
+import torch
 import numpy as np
 import pandas as pd
 import copy
 from pathlib import Path
 
+DATAFILE = Path("C:/Users/fredd/Desktop/freddy/sciebo/Masterarbeit/03_Konzeptentwicklung/Daten") / \
+           "00_interesting_data.xlsx"
 
-DATAFILE = Path("C:/Users/fredd/Desktop/freddy/sciebo/Masterarbeit/03_Konzeptentwicklung/Daten") /\
-                "00_interesting_data.xlsx"
-
+np.random.seed(42)
 # TODO: wird überhaupt eine gym environment benötigt, d.h. iwelche gym Funktionen benutzt?
 
 
 class FSCNetworkEnv(gym.Env):
-    metadata = {'render.modes': ['human']}
 
     def __init__(self):
         self.__init_support = None
         self.__init_resource = None
-        self._shared_data_test = None
-        self._shared_data_train = None
-        self._shell_data_test = None
-        self._shell_data_train = None
+        self._shared_data = None
+        self._shared_data_orig = None
+        self._shell_data = None
+        self._shell_data_orig = None
         self._support = None
         self._resource = None
         self._episode_len = None
         self._delta_resource = None
         self._support_factor = None
-        self._mode = 'train'
         self._current_step = None
         self._sub_lvl = None
+        self._mode = None
 
-    def step(self, actions):
-        # TODO: change all self. operations to local variables and see how fast the code is afterwards, gleiches gilt für calc_reward
-
-        # set the support based on the previous resource assignment -> Therefore, it is the first calculation.
-        orig_support = copy.copy(self._support)
-        for agt in self._support.keys():
-            add_val = 0
-            # FSC has fixed support
-            if agt != 'FSC':
-                for par_agt in self._support.keys():
-                    # agents do not due to resource assignment to itself
-                    if agt != par_agt:
-                        # change to partner agent is only initiated, support is different
-                        if self._support.loc['support', agt] < self._support.loc['support', par_agt]:
-                            factor = self._support_factor
-                        elif self._support.loc['support', agt] > self._support.loc['support', par_agt]:
-                            factor = -self._support_factor
-                        else:
-                            factor = 0
-                        add_val += factor * (self._resource.loc[agt, par_agt] + self._resource.loc[par_agt, agt])/2
-
-                # change in support is based on previous support --> copy is used
-                # check that support remains between 0 and 1
-                new_val = orig_support.loc['support', agt] + add_val
-                if 0.0 > new_val:
-                    self._support.loc['support', agt] = 0
-                elif new_val > 1.0:
-                    self._support.loc['support', agt] = 1
-                else:
-                    self._support.loc['support', agt] = new_val
-
-        # set the resource assignment based on the agents' actions
-        orig_resource = copy.copy(self._resource)
-        for act_agt in actions.keys():
-            # Gov is passiv
-            if act_agt != 'Gov':
-                for part_agt in actions[act_agt].keys():
-                    # update value for resource assignment if it is between 0 and 1
-                    val = self._resource.loc[act_agt, part_agt] + self._delta_resource * actions[act_agt][part_agt]
-                    if (0.0 <= val) and (val <= 1.0):
-                        self._resource.loc[act_agt, part_agt] = val
-
-                # set the resource assignment of the agent to itself
-                # as a result of the resource assignment to the other agents
-                ext_assign = self._resource.loc[act_agt].sum() - self._resource.loc[act_agt, act_agt]
-                self._resource.loc[act_agt, act_agt] = 1 - ext_assign
-
-                # if actions are not feasible, keep the old resource assignment
-                if (True in (self._resource.loc[act_agt][:] < 0).values) or \
-                        (True in (self._resource.loc[act_agt][:] > 1).values):
-                    print('---------------------    Actions {} of agent {} were not feasible.    ---------------------'\
-                          .format(actions[act_agt], act_agt))
-                    self._resource.loc[act_agt] = orig_resource.loc[act_agt]
-
-        # check if resource calculations were correct
-        if (self._resource.sum(axis=1).sum() / len(self._resource.index) != 1) or \
-           (True in (self._resource[:][:] < 0).values) or (True in (self._resource[:][:] > 1).values):
-            raise ValueError('Resource assignment calculation went wrong')
-
-        observation = [copy.copy(self._support), copy.copy(self._resource)]
-        reward = self.calc_reward(observation, self._mode)
-        done = self.check_if_done()
-        info = []
-        return observation, reward, done, info
-
-    def reset(self) -> list:
-        self._current_step = 0
-        # set support and resource to initial values and return the state
-        self._support = copy.copy(self.__init_support)
-        self._resource = copy.copy(self.__init_resource)
-        return [copy.copy(self._support), copy.copy(self._resource)]
-
-    def render(self, mode='human', close=False):
-        pass
-
-    def setup(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fac):
-        # setup the environment
-        shared, shell = load_data(agt)
-        self._sub_lvl = sub_lvl
-        self._episode_len = ep_len
-        self._delta_resource = delta_res
-        self._support_factor = sup_fac
-
-        # split to train and test data
-        self._shared_data_train, self._shared_data_test = split_data(shared)
-        self._shell_data_train, self._shell_data_test = split_data(shell)
-
-        # set the initial states
-        self.__init_support = pd.DataFrame(init_sup, index=['support'], columns=agt)
-        self.__init_resource = pd.DataFrame(init_res, index=agt, columns=agt)
-
-    def get_shell_data(self):
-        return copy.copy(self.__shell_data)
-
-    def get_shared_data(self):
-        return copy.copy(self.__shared_data)
-
-    def calc_reward(self, obs, mode):
+    def calc_reward(self, obs):
+        resource = self._resource
+        sub_lvl = self._sub_lvl
         step = self._current_step
-        if mode == 'train':
-            sd_data = self._shared_data_train
-            sl_data = self._shell_data_train
-        else:
-            sd_data = self._shared_data_test
-            sl_data = self._shell_data_test
+        sd_data = self._shared_data
+        sl_data = self._shell_data
 
         # calculate reward for FSC, subtract support of FSC as it is not changing
         r = {'FSC': obs[0].loc['support'].sum() - 1}
@@ -142,24 +43,211 @@ class FSCNetworkEnv(gym.Env):
         # calculate reward for Shell
         own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
                       sd_data.iloc[step]['CO2_price']) / sl_data.iloc[step]['TotCap_USD']
-        r_shell = self._resource['Shell']['Shell'] * own_return + self._sub_lvl * self._resource.loc['Shell', 'FSC'] + \
-                  self._sub_lvl * self._support.loc['support', 'Shell'] * self._resource['Shell']['Shell']
+        r_shell = resource['Shell']['Shell'] * own_return + sub_lvl * resource.loc['Shell', 'FSC'] + \
+                  sub_lvl * self._support.loc['support', 'Shell'] * resource['Shell']['Shell']
         r.update({'Shell': r_shell})
-
-        # update step
-        self._current_step += 1
 
         return r
 
-    def set_mode(self, mod):
-        self._mode = mod
-
     def check_if_done(self):
+        current_step = self._current_step
         # minus one as the first step is performed with step=0, taking the iloc[0] of the data DataFrames
-        if (self._current_step == self._episode_len) or (self._current_step == len(self._shell_data_train) - 1):
+        if current_step == self._episode_len:
             return True
         else:
             return False
+
+    def reset(self) -> list:
+        self._current_step = 0
+        support = self.__init_support
+        resource = self.__init_resource
+        # set support and resource to initial values and return the state
+        self._support = copy.copy(support)
+        self._resource = copy.copy(resource)
+        # set starting point of external data
+        self.set_data()
+        return [copy.copy(support), copy.copy(resource)]
+
+    def render(self, close=False):
+        pass
+
+    def setup(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fac, mode):
+        # setup the environment
+        shared, shell = load_data(agt)
+        self._sub_lvl = sub_lvl
+        self._episode_len = ep_len
+        self._delta_resource = delta_res
+        self._support_factor = sup_fac
+        self._mode = mode
+
+        # split to train and test data
+        shared_train, shared_test = split_data(shared)
+        shell_train, shell_test = split_data(shell)
+        if mode == 'train':
+            self._shared_data_orig = shared_train
+            self._shell_data_orig = shell_train
+        else:
+            self._shared_data_orig = shared_test
+            self._shell_data_orig = shell_test
+
+        # set the initial states
+        self.__init_support = pd.DataFrame(init_sup, index=['support'], columns=agt)
+        self.__init_resource = pd.DataFrame(init_res, index=agt, columns=agt)
+
+    def set_data(self):
+        # set starting point of the external data randomly for reward calculation
+        ep_len = self._episode_len
+        sl = copy.copy(self._shell_data_orig)
+        sd = copy.copy(self._shared_data_orig)
+        start = np.random.choice(range(0, sd.shape[0] - ep_len + 1))
+
+        self._shell_data = sl.iloc[start:start + ep_len]
+        self._shared_data = sd.iloc[start:start + ep_len]
+
+    def step(self, actions):
+        support = self._support
+        support_factor = self._support_factor
+        resource = self._resource
+        delta_resource = self._delta_resource
+
+        # set the support based on the previous resource assignment -> Therefore, it is the first calculation.
+        orig_support = copy.copy(support)
+        for agt in support.keys():
+            add_val = 0
+            # FSC has fixed support
+            if agt != 'FSC':
+                for par_agt in support.keys():
+                    # agents do not due to resource assignment to itself
+                    if agt != par_agt:
+                        # change to partner agent is only initiated, support is different
+                        if orig_support.loc['support', agt] < orig_support.loc['support', par_agt]:
+                            factor = support_factor
+                        elif orig_support.loc['support', agt] > orig_support.loc['support', par_agt]:
+                            factor = -support_factor
+                        else:
+                            factor = 0
+                        add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
+
+                # change in support is based on previous support --> copy is used
+                # check that support remains between 0 and 1
+                new_val = orig_support.loc['support', agt] + add_val
+                if 0.0 > new_val:
+                    support.loc['support', agt] = 0
+                elif new_val > 1.0:
+                    support.loc['support', agt] = 1
+                else:
+                    support.loc['support', agt] = new_val
+
+        # set the resource assignment based on the agents' actions
+        orig_resource = copy.copy(resource)
+        for act_agt in actions.keys():
+            # Gov is passiv
+            if act_agt != 'Gov':
+                for part_agt in actions[act_agt].keys():
+                    # update value for resource assignment if it is between 0 and 1
+                    val = resource.loc[act_agt, part_agt] + delta_resource * actions[act_agt][part_agt]
+                    if (0.0 <= val) and (val <= 1.0):
+                        resource.loc[act_agt, part_agt] = val
+
+                # set the resource assignment of the agent to itself
+                # as a result of the resource assignment to the other agents
+                ext_assign = resource.loc[act_agt].sum() - resource.loc[act_agt, act_agt]
+                resource.loc[act_agt, act_agt] = 1 - ext_assign
+
+                # if actions are not feasible, keep the old resource assignment
+                if (True in (resource.loc[act_agt][:] < 0).values) or \
+                        (True in (resource.loc[act_agt][:] > 1).values):
+                    print('---------------------    Actions {} of agent {} were not feasible.    ---------------------' \
+                          .format(actions[act_agt], act_agt))
+                    resource.loc[act_agt] = orig_resource.loc[act_agt]
+
+        # check if resource calculations were correct
+        if (resource.sum(axis=1).sum() / len(resource.index) != 1) or \
+                (True in (resource[:][:] < 0).values) or (True in (resource[:][:] > 1).values):
+            raise ValueError('Resource assignment calculation went wrong')
+
+        observation = [copy.copy(support), copy.copy(resource)]
+        reward = self.calc_reward(observation)
+        # update step and check if finished
+        self._current_step += 1
+        done = self.check_if_done()
+
+        return observation, reward, done
+
+    def step_calc(self, actions):
+        support = self._support
+        support_factor = self._support_factor
+        resource = self._resource
+        delta_resource = self._delta_resource
+        sup_calc = {'Shell': [], 'Gov': []}
+        res_calc = {'FSC': [], 'Shell': [], 'Gov': []}
+
+        # set the support based on the previous resource assignment -> Therefore, it is the first calculation.
+        orig_support = copy.copy(support)
+        for agt in support.keys():
+            # FSC has fixed support
+            if agt != 'FSC':
+                add_val = 0
+                sup_calc[agt].append(support.loc['support'][agt])
+                for par_agt in support.keys():
+                    # agents do not due to resource assignment to itself
+                    if agt != par_agt:
+                        # change to partner agent is only initiated, support is different
+                        if orig_support.loc['support', agt] < orig_support.loc['support', par_agt]:
+                            factor = support_factor
+                        elif orig_support.loc['support', agt] > orig_support.loc['support', par_agt]:
+                            factor = -support_factor
+                        else:
+                            factor = 0
+                        sup_calc[agt].append(factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2)
+                        add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
+
+                # change in support is based on previous support --> copy is used
+                # check that support remains between 0 and 1
+                new_val = orig_support.loc['support', agt] + add_val
+                if 0.0 > new_val:
+                    support.loc['support', agt] = 0
+                elif new_val > 1.0:
+                    support.loc['support', agt] = 1
+                else:
+                    support.loc['support', agt] = new_val
+                sup_calc[agt].append(support.loc['support', agt])
+
+        # TODO: weitermachen mit Berechnung der resource assignment und rausschreiben der support calc
+        # set the resource assignment based on the agents' actions
+        orig_resource = copy.copy(resource)
+        for act_agt in actions.keys():
+            # Gov is passiv
+            if act_agt != 'Gov':
+                for part_agt in actions[act_agt].keys():
+                    # update value for resource assignment if it is between 0 and 1
+                    val = resource.loc[act_agt, part_agt] + delta_resource * actions[act_agt][part_agt]
+                    if (0.0 <= val) and (val <= 1.0):
+                        resource.loc[act_agt, part_agt] = val
+
+                # set the resource assignment of the agent to itself
+                # as a result of the resource assignment to the other agents
+                ext_assign = resource.loc[act_agt].sum() - resource.loc[act_agt, act_agt]
+                resource.loc[act_agt, act_agt] = 1 - ext_assign
+
+                # if actions are not feasible, keep the old resource assignment
+                if (True in (resource.loc[act_agt][:] < 0).values) or \
+                        (True in (resource.loc[act_agt][:] > 1).values):
+                    print('--------------------    Actions {} of agent {} were not feasible.    --------------------' \
+                          .format(actions[act_agt], act_agt))
+                    resource.loc[act_agt] = orig_resource.loc[act_agt]
+
+        # check if resource calculations were correct
+        if (resource.sum(axis=1).sum() / len(resource.index) != 1) or \
+                (True in (resource[:][:] < 0).values) or (True in (resource[:][:] > 1).values):
+            raise ValueError('Resource assignment calculation went wrong')
+
+        observation = [copy.copy(support), copy.copy(resource)]
+        reward = self.calc_reward(observation)
+        # update step
+        self._current_step += 1
+        done = self.check_if_done()
+        return observation, reward, done, sup_calc
 
 
 def load_data(agents: list) -> [pd.DataFrame, pd.DataFrame]:
@@ -203,10 +291,10 @@ def load_shell(ld_df: pd.DataFrame) -> pd.DataFrame:
     # calculate weekly data by dividing quarterly values by number of weeks in the quarter
     tmp = len(idx_val) - 1
     for i in range(tmp):
-        num_ent = shell.loc[(idx_val[i+1] < shell.index) & (shell.index < idx_val[i]), 'CO2_price'].count()
+        num_ent = shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), 'CO2_price'].count()
         for key in shell.keys():
             if key != 'CO2_price':
-                shell.loc[(idx_val[i+1] < shell.index) & (shell.index < idx_val[i]), key] \
+                shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), key] \
                     = shell.loc[idx_val[i], key] / num_ent
 
     # calculate weekly data for first quarter

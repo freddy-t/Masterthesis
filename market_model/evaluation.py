@@ -7,7 +7,9 @@ from pathlib import Path
 # TODO: model must be evaluated eval() after loading
 # TODO: script verschönern
 
-LOAD_DIR = Path('../saved_data/2020-07-15/3_n_ep1000_l_ep100_lr0.001')
+DATE = '2020-07-16_debug'
+EXP = '3_n_ep1000_l_ep100_lr0.001'
+LOAD_DIR = Path('../saved_data') / DATE# / EXP
 
 # load general data
 config = torch.load(LOAD_DIR / 'config')
@@ -53,7 +55,7 @@ times = torch.load(LOAD_DIR / 'running_times')
 
 
 # load state data
-versions = ['optim1', 'optim100']
+versions = ['optim1']#, 'optim100']
 states = dict()
 for version in versions:
     states.update({version: torch.load(LOAD_DIR / ('batch_states_' + version))})
@@ -87,12 +89,13 @@ for version in versions:
     ax[0].set_title('mean and standard deviation')
     ax[1].set_title('mean and max-min')
     for axis in fig.get_axes():
-        axis.set_xlabel('episode')
+        axis.set_xlabel('step')
         axis.set_ylabel('level of support')
         axis.legend()
 
 # plot first two plots
 state_plots[0].show()
+state_plots[0].savefig((LOAD_DIR / (versions[0] + '.pdf')))  # svg auch möglich
 state_plots[1].show()
 
 # loop over all versions

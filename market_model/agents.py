@@ -6,6 +6,7 @@ from torch import nn
 np.random.seed(42)
 
 
+# TODO: put get_actions and predict in Agent as they are the same for ?all? agents
 class Agent(object):
     def __init__(self, act_space, n_state):
         self.__state = None

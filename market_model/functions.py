@@ -15,10 +15,6 @@ def discount_rewards(rewards, gamma):
     return r
 
 
-def save_obj(path, obj):
-    torch.save(obj, path)
-
-
 def create_dir(debug_flag, n_ep, l_ep, lr):
     # function creates directory to store data of the training/testing
     dir_path = Path('../saved_data') / str(datetime.datetime.now().date())

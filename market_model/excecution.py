@@ -6,17 +6,19 @@ import time
 import sys
 import numpy as np
 import gym_FSC_network
-from functions import discount_rewards, create_dir, save_obj
+from functions import discount_rewards, create_dir
 from torch.utils.tensorboard import SummaryWriter
 
-# TODO: ?resource and support initialize in env and check if keys are matching
 # TODO: if gov should be active: look for "passiv" and change the lines
 # TODO: pip3 install progress --> progress bar
+# TODO: testing must be implemented: load agents and use train data in environment, no update
 # to run tensorboard use following cmd command:
 # tensorboard --logdir=C:\Users\fredd\PycharmProjects\Masterthesis\saved_data
 
-DEBUG = False
-store_graph = False
+DEBUG = True                # True if in debug mode
+save_env_calc = True        # True if support and resource calculations should be saved
+store_graph = False         # True if computational graph of network should be saved
+MODE = 'train'              # 'train' for training mode, otherwise testing data is used
 
 # model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
@@ -72,7 +74,7 @@ with open((SAVE_DIR / 'config.txt'), 'w') as file:
 # create and setup environment
 writer = SummaryWriter(SAVE_DIR)
 env = gym.make('FSC_network-v0')
-env.setup(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, SUPPORT_FACTOR)
+env.setup(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, SUPPORT_FACTOR, MODE)
 
 # initialize agents and network optimizers and store them in dicts
 optimizers = dict()
@@ -91,32 +93,36 @@ for agt in AGENTS:
 # save initial agents
 torch.save(all_agents, (SAVE_DIR / 'agents_init'))
 
-# init dicts with the active agents
+# initialise loop variables
 total_rewards = {'FSC': [], 'Shell': []}
 batch_returns = {'FSC': [], 'Shell': []}
 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
-batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
+batch_states = {'FSC':   np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
-                'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states])}
+                'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states])}
+support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
+                'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
 batch_count = 0
 optim_count = 0
 step_count = 0
 ep = 0
 states_cplt = []
 times = []
-# TODO: pre allocate everything that is possible --> get ride of extend() and append()
+# loop over all episodes (= rollouts)
 while ep < NUM_EPISODES:
     ep += 1
     start_time = time.time()
 
     state_0_cplt = env.reset()
-    states = {'FSC': np.empty([LENGTH_EPISODE, num_states]), 'Shell': np.empty([LENGTH_EPISODE, num_states]),
-              'Gov': np.empty([LENGTH_EPISODE, num_states])}
+    states = {'FSC':   np.empty([LENGTH_EPISODE, num_states]),
+              'Shell': np.empty([LENGTH_EPISODE, num_states]),
+              'Gov':   np.empty([LENGTH_EPISODE, num_states])}
     rewards = {'FSC': [], 'Shell': []}
     actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
     step_actions = {'FSC': [], 'Shell': []}
     done = False
 
+    # loop over episode steps
     while not done:
 
         for key in AGENTS:
@@ -131,7 +137,13 @@ while ep < NUM_EPISODES:
                     actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
 
         # perform action on environment
-        state_1_cplt, r1, done, _ = env.step(step_actions)
+        if save_env_calc:
+            state_1_cplt, r1, done, sup_calc = env.step_calc(step_actions)
+            for key in support_calc.keys():
+                support_calc[key][ep-1][step_count] = sup_calc[key]
+                #todo: weiterschauen
+        else:
+            state_1_cplt, r1, done = env.step(step_actions)
 
         # store rewards
         for agt in ACT_AGT:
@@ -196,12 +208,11 @@ while ep < NUM_EPISODES:
 
                         # save weights and its gradients for tensorboard after SAVE_INTERVAL number of
                         # optimization steps
-                        if optim_count % SAVE_INTERVAL == 0:
+                        # if optim_count % SAVE_INTERVAL == 0:
 
-                            for name, weight in all_agents[agt].get_networks()[par_agt].named_parameters():
-                                writer.add_histogram(agt + '_' + par_agt + '_' + name, weight, optim_count)
-                                writer.add_histogram(agt + '_' + par_agt + '_' + name + '_grad', weight.grad,
-                                                     optim_count)
+                        for name, weight in all_agents[agt].get_networks()[par_agt].named_parameters():
+                            writer.add_histogram(agt + '_' + par_agt + '_' + name, weight, optim_count)
+                            writer.add_histogram(agt + '_' + par_agt + '_' + name + '_grad', weight.grad, optim_count)
 
                 # save agents, all states and rewards after SAVE_INTERVAL number of optimization steps
                 if optim_count % SAVE_INTERVAL == 0:
@@ -212,9 +223,9 @@ while ep < NUM_EPISODES:
                 # empty batch
                 batch_returns = {'FSC': [], 'Shell': []}
                 batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
-                batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
+                batch_states = {'FSC':   np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
                                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
-                                'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states])}
+                                'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states])}
                 batch_count = 0
                 print('-------------------------------     Update step completed.     -------------------------------')
 
