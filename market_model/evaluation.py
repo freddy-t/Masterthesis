@@ -7,19 +7,19 @@ from pathlib import Path
 # TODO: model must be evaluated eval() after loading
 # TODO: script verschönern
 
-DATE = '2020-07-16_debug'
+DATE = '2020-07-17_debug'
 EXP = '3_n_ep1000_l_ep100_lr0.001'
-LOAD_DIR = Path('../saved_data') / DATE# / EXP
+LOAD_DIR = Path('../saved_data') / DATE # / EXP
 
 # load general data
 config = torch.load(LOAD_DIR / 'config')
 total_rewards = torch.load(LOAD_DIR / 'tot_r')
 times = torch.load(LOAD_DIR / 'running_times')
 
-# plots = []
+# old_plots = []
 # plot total rewards of active agents and the rolling mean
 # window_width = 50
-# plots.append(plt.figure(1))
+# old_plots.append(plt.figure(1))
 # ma = pd.Series(total_rewards['FSC']).rolling(window_width).mean()
 # plt.plot(total_rewards['FSC'])
 # plt.plot(ma, label='50ep - ma')
@@ -27,26 +27,26 @@ times = torch.load(LOAD_DIR / 'running_times')
 # plt.legend()
 # plt.xlabel('episode')
 # plt.ylabel('reward')
-# plots[0].show()
+# old_plots[0].show()
 #
-# plots.append(plt.figure(2))
+# old_plots.append(plt.figure(2))
 # ma = pd.Series(total_rewards['Shell']).rolling(window_width).mean()
 # plt.plot(total_rewards['Shell'])
 # plt.plot(ma, label='50ep - ma')
 # plt.title('Shell')
 # plt.xlabel('episode')
 # plt.ylabel('reward')
-# plots[1].show()
+# old_plots[1].show()
 #
 # plot the scaled rewards
-# plots.append(plt.figure(3))
+# old_plots.append(plt.figure(3))
 # plt.plot(np.array(total_rewards['Shell']) / np.array(total_rewards['Shell']).max(), label='Shell')
 # plt.plot(np.array(total_rewards['FSC']) / np.array(total_rewards['FSC']).max(), label='FSC', alpha=0.6)
 # plt.legend()
 # plt.title('')
 # plt.xlabel('episode')
 # plt.ylabel('scaled reward')
-# plots[2].show()
+# old_plots[2].show()
 
 # determine differences of the neural net weights
 # agents = [torch.load(LOAD_DIR / 'agents_init'), torch.load(LOAD_DIR / 'agents_optim100_ep1000')]
@@ -60,13 +60,14 @@ states = dict()
 for version in versions:
     states.update({version: torch.load(LOAD_DIR / ('batch_states_' + version))})
 
-# create plots for support
-state_plots = []
-fig_count = 1
+# ------------------ create plots for support ------------------
+plots = []
+fig_count = 0
+plotted_count = 0
 # loop over all versions
 for version in versions:
     fig = plt.figure(fig_count, figsize=(12, 4))
-    state_plots.append(fig)
+    plots.append(fig)
     fig_count += 1
     # create two axes
     ax = [fig.add_subplot(121), fig.add_subplot(122)]
@@ -85,7 +86,7 @@ for version in versions:
         ax[1].fill_between(x, states[version][key].max(axis=0)[:, 0],
                            states[version][key].min(axis=0)[:, 0], alpha=0.2)
     # set some plot properties
-    fig.suptitle('support of agents - ' + version)
+    fig.suptitle('support of agents of batch - ' + version)
     ax[0].set_title('mean and standard deviation')
     ax[1].set_title('mean and max-min')
     for axis in fig.get_axes():
@@ -94,14 +95,16 @@ for version in versions:
         axis.legend()
 
 # plot first two plots
-state_plots[0].show()
-state_plots[0].savefig((LOAD_DIR / (versions[0] + '.pdf')))  # svg auch möglich
-state_plots[1].show()
+for i in range(fig_count):
+    plotted_count += 1
+    # plots[i].show()
+# state_plots[0].savefig((LOAD_DIR / (versions[0] + '.pdf')))  # svg auch möglich
+# state_plots[1].show()
 
-# loop over all versions
+# ------------------ create plots for resource assignment ------------------
 for version in versions:
     fig = plt.figure(fig_count, figsize=(12, 4))
-    state_plots.append(fig)
+    plots.append(fig)
     # create new axes
     ax = [fig.add_subplot(121), fig.add_subplot(122)]
     fig_count += 1
@@ -122,6 +125,16 @@ for version in versions:
     fig.suptitle('mean resource allocation for batch - ' + version)
 
 # plot last
-state_plots[2].show()
-state_plots[3].show()
+for i in range(plotted_count, fig_count):
+    plotted_count += 1
+    # plots[i].show()
+# state_plots[2].show()
+# state_plots[3].show()
+
+# ------------------ plot support calculation ------------------
+support_calc = dict()
+for version in versions:
+    support_calc.update({version: torch.load(LOAD_DIR / ('support_calc_' + version))})
+
+
 pass

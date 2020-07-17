@@ -1,5 +1,6 @@
 import gym
 import torch
+from typing import Dict, List, NoReturn
 import numpy as np
 import pandas as pd
 import copy
@@ -29,8 +30,9 @@ class FSCNetworkEnv(gym.Env):
         self._current_step = None
         self._sub_lvl = None
         self._mode = None
+        self.reward_shell_split = None
 
-    def calc_reward(self, obs):
+    def calc_reward(self, obs) -> Dict[str, float]:
         resource = self._resource
         sub_lvl = self._sub_lvl
         step = self._current_step
@@ -47,9 +49,12 @@ class FSCNetworkEnv(gym.Env):
                   sub_lvl * self._support.loc['support', 'Shell'] * resource['Shell']['Shell']
         r.update({'Shell': r_shell})
 
+        self.reward_shell_split = np.array([r_shell, resource['Shell']['Shell'] * own_return,
+                                            sub_lvl*resource.loc['Shell', 'FSC'],
+                                            sub_lvl*self._support.loc['support', 'Shell']*resource['Shell']['Shell']])
         return r
 
-    def check_if_done(self):
+    def check_if_done(self) -> bool:
         current_step = self._current_step
         # minus one as the first step is performed with step=0, taking the iloc[0] of the data DataFrames
         if current_step == self._episode_len:
@@ -57,7 +62,7 @@ class FSCNetworkEnv(gym.Env):
         else:
             return False
 
-    def reset(self) -> list:
+    def reset(self) -> List[pd.DataFrame]:
         self._current_step = 0
         support = self.__init_support
         resource = self.__init_resource
@@ -68,10 +73,10 @@ class FSCNetworkEnv(gym.Env):
         self.set_data()
         return [copy.copy(support), copy.copy(resource)]
 
-    def render(self, close=False):
+    def render(self):
         pass
 
-    def setup(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fac, mode):
+    def setup(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fac, mode) -> NoReturn:
         # setup the environment
         shared, shell = load_data(agt)
         self._sub_lvl = sub_lvl
@@ -94,7 +99,7 @@ class FSCNetworkEnv(gym.Env):
         self.__init_support = pd.DataFrame(init_sup, index=['support'], columns=agt)
         self.__init_resource = pd.DataFrame(init_res, index=agt, columns=agt)
 
-    def set_data(self):
+    def set_data(self) -> NoReturn:
         # set starting point of the external data randomly for reward calculation
         ep_len = self._episode_len
         sl = copy.copy(self._shell_data_orig)
@@ -104,7 +109,7 @@ class FSCNetworkEnv(gym.Env):
         self._shell_data = sl.iloc[start:start + ep_len]
         self._shared_data = sd.iloc[start:start + ep_len]
 
-    def step(self, actions):
+    def step(self, actions) -> (List[pd.DataFrame], Dict[str, float], bool):
         support = self._support
         support_factor = self._support_factor
         resource = self._resource
@@ -174,13 +179,12 @@ class FSCNetworkEnv(gym.Env):
 
         return observation, reward, done
 
-    def step_calc(self, actions):
+    def step_calc(self, actions) -> (List[pd.DataFrame], Dict, bool, Dict, np.ndarray):
         support = self._support
         support_factor = self._support_factor
         resource = self._resource
         delta_resource = self._delta_resource
         sup_calc = {'Shell': [], 'Gov': []}
-        res_calc = {'FSC': [], 'Shell': [], 'Gov': []}
 
         # set the support based on the previous resource assignment -> Therefore, it is the first calculation.
         orig_support = copy.copy(support)
@@ -213,7 +217,6 @@ class FSCNetworkEnv(gym.Env):
                     support.loc['support', agt] = new_val
                 sup_calc[agt].append(support.loc['support', agt])
 
-        # TODO: weitermachen mit Berechnung der resource assignment und rausschreiben der support calc
         # set the resource assignment based on the agents' actions
         orig_resource = copy.copy(resource)
         for act_agt in actions.keys():
@@ -247,7 +250,7 @@ class FSCNetworkEnv(gym.Env):
         # update step
         self._current_step += 1
         done = self.check_if_done()
-        return observation, reward, done, sup_calc
+        return observation, reward, done, sup_calc, self.reward_shell_split
 
 
 def load_data(agents: list) -> [pd.DataFrame, pd.DataFrame]:
@@ -326,7 +329,7 @@ def index_to_m_y(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def split_data(data: pd.DataFrame):
+def split_data(data: pd.DataFrame) -> (pd.DataFrame, pd.DataFrame):
     test = data.loc['2019']
     train = data.drop(index='2019')
 

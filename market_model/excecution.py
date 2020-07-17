@@ -15,8 +15,8 @@ from torch.utils.tensorboard import SummaryWriter
 # to run tensorboard use following cmd command:
 # tensorboard --logdir=C:\Users\fredd\PycharmProjects\Masterthesis\saved_data
 
-DEBUG = True                # True if in debug mode
-save_env_calc = True        # True if support and resource calculations should be saved
+DEBUG = False               # True if in debug mode
+save_calc = False            # True if support and resource calculations should be saved
 store_graph = False         # True if computational graph of network should be saved
 MODE = 'train'              # 'train' for training mode, otherwise testing data is used
 
@@ -39,7 +39,7 @@ DELTA_RESOURCE = 0.005                   # factor by which resource assignment i
 SUPPORT_FACTOR = 0.1                     # factor influences how fast support is changed due to agents interaction
 
 # RL parameters
-LENGTH_EPISODE = 100                     # limit is 313
+LENGTH_EPISODE = 100                    # limit is 313
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
 BATCH_SIZE = 10
@@ -102,6 +102,7 @@ batch_states = {'FSC':   np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
                 'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states])}
 support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
                 'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
+reward_shell_calc = np.empty([BATCH_SIZE, LENGTH_EPISODE, 4])
 batch_count = 0
 optim_count = 0
 step_count = 0
@@ -137,11 +138,11 @@ while ep < NUM_EPISODES:
                     actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
 
         # perform action on environment
-        if save_env_calc:
-            state_1_cplt, r1, done, sup_calc = env.step_calc(step_actions)
+        if save_calc:
+            state_1_cplt, r1, done, sup_calc, r_shell = env.step_calc(step_actions)
             for key in support_calc.keys():
-                support_calc[key][ep-1][step_count] = sup_calc[key]
-                #todo: weiterschauen
+                support_calc[key][batch_count][step_count] = sup_calc[key]
+            reward_shell_calc[batch_count][step_count] = r_shell
         else:
             state_1_cplt, r1, done = env.step(step_actions)
 
@@ -169,6 +170,10 @@ while ep < NUM_EPISODES:
                 # write rewards to tensorboard
                 writer.add_scalar('reward_FSC', np.array(rewards['FSC']).sum(), ep)
                 writer.add_scalar('reward_Shell', np.array(rewards['Shell']).sum(), ep)
+
+            if save_calc:
+                for i in range(reward_shell_calc[batch_count].shape[1]):
+                    reward_shell_calc[batch_count][:, i] = discount_rewards(reward_shell_calc[batch_count][:, i], GAMMA)
 
             batch_count += 1
 
@@ -219,6 +224,9 @@ while ep < NUM_EPISODES:
                     torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep)))
                     torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
                     torch.save(batch_states, (SAVE_DIR / 'batch_states_optim{}'.format(optim_count)))
+                    if save_calc:
+                        torch.save(support_calc, (SAVE_DIR / 'support_calc_optim{}'.format(optim_count)))
+                        torch.save(reward_shell_calc, (SAVE_DIR / 'reward_shell_calc_optim{}'.format(optim_count)))
 
                 # empty batch
                 batch_returns = {'FSC': [], 'Shell': []}
@@ -227,6 +235,10 @@ while ep < NUM_EPISODES:
                                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states]),
                                 'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, num_states])}
                 batch_count = 0
+                if save_calc:
+                    support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
+                                    'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
+                    reward_shell_calc = np.empty([BATCH_SIZE, LENGTH_EPISODE, 4])
                 print('-------------------------------     Update step completed.     -------------------------------')
 
     # take time and save it
