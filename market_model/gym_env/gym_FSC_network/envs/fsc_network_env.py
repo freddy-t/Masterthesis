@@ -26,7 +26,8 @@ class FSCNetworkEnv(gym.Env):
         self._resource = None
         self._episode_len = None
         self._delta_resource = None
-        self._support_factor = None
+        self._support_factor_fsc = None
+        self._support_ratio = None
         self._current_step = None
         self._sub_lvl = None
         self._mode = None
@@ -73,16 +74,14 @@ class FSCNetworkEnv(gym.Env):
         self.set_data()
         return [copy.copy(support), copy.copy(resource)]
 
-    def render(self):
-        pass
-
-    def setup(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fac, mode) -> NoReturn:
+    def setup(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fsc, sup_ratio, mode) -> NoReturn:
         # setup the environment
         shared, shell = load_data(agt)
         self._sub_lvl = sub_lvl
         self._episode_len = ep_len
         self._delta_resource = delta_res
-        self._support_factor = sup_fac
+        self._support_factor_fsc = sup_fsc
+        self._support_ratio = sup_ratio
         self._mode = mode
 
         # split to train and test data
@@ -111,7 +110,8 @@ class FSCNetworkEnv(gym.Env):
 
     def step(self, actions) -> (List[pd.DataFrame], Dict[str, float], bool):
         support = self._support
-        support_factor = self._support_factor
+        support_factor = self._support_factor_fsc
+        support_ratio = self._support_ratio
         resource = self._resource
         delta_resource = self._delta_resource
 
@@ -131,6 +131,8 @@ class FSCNetworkEnv(gym.Env):
                             factor = -support_factor
                         else:
                             factor = 0
+                        if par_agt == 'Gov' or par_agt == 'Shell':
+                            factor = factor * support_ratio
                         add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
 
                 # change in support is based on previous support --> copy is used
@@ -181,7 +183,8 @@ class FSCNetworkEnv(gym.Env):
 
     def step_calc(self, actions) -> (List[pd.DataFrame], Dict, bool, Dict, np.ndarray):
         support = self._support
-        support_factor = self._support_factor
+        support_factor = self._support_factor_fsc
+        support_ratio = self._support_ratio
         resource = self._resource
         delta_resource = self._delta_resource
         sup_calc = {'Shell': [], 'Gov': []}
@@ -203,6 +206,8 @@ class FSCNetworkEnv(gym.Env):
                             factor = -support_factor
                         else:
                             factor = 0
+                        if par_agt == 'Gov' or par_agt == 'Shell':
+                            factor = factor * support_ratio
                         sup_calc[agt].append(factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2)
                         add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
 

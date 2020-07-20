@@ -10,13 +10,14 @@ from functions import discount_rewards, create_dir
 from torch.utils.tensorboard import SummaryWriter
 
 # TODO: if gov should be active: look for "passiv" and change the lines
-# TODO: pip3 install progress --> progress bar
-# TODO: testing must be implemented: load agents and use train data in environment, no update
+# TODO: so viel verallgemeinern wie möglich bei den agenten, damit z.B. unterschiedliche states und actions rauskommen können
 # to run tensorboard use following cmd command:
 # tensorboard --logdir=C:\Users\fredd\PycharmProjects\Masterthesis\saved_data
 
-DEBUG = False               # True if in debug mode
-save_calc = False            # True if support and resource calculations should be saved
+# runtime parameters
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+DEBUG = True                # True if in debug mode
+save_calc = False           # True if support and resource calculations should be saved
 store_graph = False         # True if computational graph of network should be saved
 MODE = 'train'              # 'train' for training mode, otherwise testing data is used
 
@@ -36,13 +37,14 @@ INIT_RESOURCE = [[0.95,   0.05, 0.00],                                       # F
                  [0.05,   0.10, 0.85]]                                       # Gov
 SUB_LVL = 0.05
 DELTA_RESOURCE = 0.005                   # factor by which resource assignment is changed due to action
-SUPPORT_FACTOR = 0.1                     # factor influences how fast support is changed due to agents interaction
+SUPPORT_FACTOR_FSC = 0.01                # factor influences how fast support is changed due to FSC interaction
+SUPPORT_FACTOR_RATIO = 0.1               # ratio between support influence by agents interaction to FSC interaction
 
 # RL parameters
-LENGTH_EPISODE = 100                    # limit is 313
+LENGTH_EPISODE = 5                   # limit is 313
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
-BATCH_SIZE = 10
+BATCH_SIZE = 2
 GAMMA = 0.99
 SAVE_INTERVAL = 1                        # numbers of updates until data/model is saved
 
@@ -52,7 +54,8 @@ CONFIG = {'agents': AGENTS,
           'init_resource': INIT_RESOURCE,
           'sub_lvl': SUB_LVL,
           'delta_resource': DELTA_RESOURCE,
-          'support_factor': SUPPORT_FACTOR,
+          'support_factor': SUPPORT_FACTOR_FSC,
+          'ratio of support factor': SUPPORT_FACTOR_RATIO,
           'length_ep': LENGTH_EPISODE,
           'n_ep': NUM_EPISODES,
           'lr': LEARNING_RATE,
@@ -74,7 +77,8 @@ with open((SAVE_DIR / 'config.txt'), 'w') as file:
 # create and setup environment
 writer = SummaryWriter(SAVE_DIR)
 env = gym.make('FSC_network-v0')
-env.setup(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, SUPPORT_FACTOR, MODE)
+env.setup(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, SUPPORT_FACTOR_FSC,
+          SUPPORT_FACTOR_RATIO, MODE)
 
 # initialize agents and network optimizers and store them in dicts
 optimizers = dict()
@@ -82,7 +86,7 @@ all_agents = dict()
 num_states = len(AGENTS) + 1
 for agt in AGENTS:
     agt_optim = dict()
-    all_agents.update({agt: eval('agents.' + agt)(ACTION_SPACE, num_states, CHANGEABLE_ALLOC[agt])})
+    all_agents.update({agt: eval('agents.' + agt)(ACTION_SPACE, num_states, CHANGEABLE_ALLOC[agt], device)})
     # gov is passiv agent, thus need no optimizer
     if agt != 'Gov':
         networks = all_agents[agt].get_networks()
@@ -189,17 +193,17 @@ while ep < NUM_EPISODES:
                         optimizers[agt][par_agt].zero_grad()
 
                         # create tensors for calculation
-                        reward_tensor = torch.FloatTensor(batch_returns[agt])
+                        reward_tensor = torch.FloatTensor(batch_returns[agt]).to(device)
 
                         # create Long Tensor and add +1 to use action_tensor as indices
-                        action_tensor = torch.LongTensor(np.array(batch_actions[agt][par_agt])+1)
+                        action_tensor = torch.LongTensor(np.array(batch_actions[agt][par_agt])+1).to(device)
 
                         # calculate the loss
                         logprob = torch.log(all_agents[agt].predict(
-                            batch_states[agt].reshape([BATCH_SIZE*LENGTH_EPISODE, num_states]), par_agt))
+                            batch_states[agt].reshape([BATCH_SIZE*LENGTH_EPISODE, num_states]), par_agt)).to(device)
                         # use torch.gather to get the logprob to the corresponding action
                         selected_logprobs = reward_tensor * torch.gather(logprob, 1,
-                                                                         action_tensor.unsqueeze(1)).squeeze()
+                                                                         action_tensor.unsqueeze(1)).squeeze().to(device)
                         loss = -selected_logprobs.mean()
 
                         # Calculate gradients
@@ -220,7 +224,7 @@ while ep < NUM_EPISODES:
                             writer.add_histogram(agt + '_' + par_agt + '_' + name + '_grad', weight.grad, optim_count)
 
                 # save agents, all states and rewards after SAVE_INTERVAL number of optimization steps
-                if optim_count % SAVE_INTERVAL == 0:
+                if optim_count % SAVE_INTERVAL == 0 or optim_count:
                     torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep)))
                     torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
                     torch.save(batch_states, (SAVE_DIR / 'batch_states_optim{}'.format(optim_count)))

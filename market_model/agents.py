@@ -30,13 +30,13 @@ class Agent(object):
 
 
 class Shell(Agent):
-    def __init__(self, action_space, n_state, act_partners):
+    def __init__(self, action_space, n_state, act_partners, device):
         super().__init__(action_space, n_state)
         self.__networks = dict()
 
-        # initialize all necessary networks by copying the base network
+        # initialize all necessary networks by copying the base network and send it to device
         for agt in act_partners:
-            self.__networks.update({agt: copy.copy(super().get_base_net())})
+            self.__networks.update({agt: copy.copy(super().get_base_net()).to(device)})
 
     def get_actions(self, state) -> dict:
         nets = self.__networks
@@ -60,14 +60,14 @@ class Shell(Agent):
 
 
 class FSC(Agent):
-    def __init__(self, action_space, n_state, act_partners):
+    def __init__(self, action_space, n_state, act_partners, device):
         super().__init__(action_space, n_state)
         self.__networks = dict()
         self.__action_space = action_space
 
-        # initialize all necessary networks by copying the base network
+        # initialize all necessary networks by copying the base network and send it to device
         for agt in act_partners:
-            self.__networks.update({agt: copy.copy(super().get_base_net())})
+            self.__networks.update({agt: copy.copy(super().get_base_net()).to(device)})
 
     def get_actions(self, state) -> dict:
         nets = self.__networks
@@ -89,7 +89,7 @@ class FSC(Agent):
 
 
 class Gov(Agent):
-    def __init__(self, action_space, n_state, activ_con):
+    def __init__(self, action_space, n_state, activ_con, device):
         # super().__init__(action_space, n_state)
         pass
 
