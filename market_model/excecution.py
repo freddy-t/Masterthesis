@@ -1,11 +1,9 @@
-import gym
 import agents
 import torch
 import copy
 import time
-import sys
 import numpy as np
-import gym_FSC_network
+from fsc_network_env import FSCNetworkEnv
 from functions import discount_rewards, create_dir
 from torch.utils.tensorboard import SummaryWriter
 
@@ -41,12 +39,12 @@ SUPPORT_FACTOR_FSC = 0.01                # factor influences how fast support is
 SUPPORT_FACTOR_RATIO = 0.1               # ratio between support influence by agents interaction to FSC interaction
 
 # RL parameters
-LENGTH_EPISODE = 5                   # limit is 313
+LENGTH_EPISODE = 100                   # limit is 313
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
-BATCH_SIZE = 2
+BATCH_SIZE = 10
 GAMMA = 0.99
-SAVE_INTERVAL = 1                        # numbers of updates until data/model is saved
+SAVE_INTERVAL = 5                        # numbers of updates until data/model is saved
 
 CONFIG = {'agents': AGENTS,
           'active_agents': ACT_AGT,
@@ -74,11 +72,11 @@ with open((SAVE_DIR / 'config.txt'), 'w') as file:
 # ######################################################################################################################
 # ######################################################################################################################
 
-# create and setup environment
+# create environment
 writer = SummaryWriter(SAVE_DIR)
-env = gym.make('FSC_network-v0')
-env.setup(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, SUPPORT_FACTOR_FSC,
-          SUPPORT_FACTOR_RATIO, MODE)
+env = FSCNetworkEnv(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, SUPPORT_FACTOR_FSC,
+                    SUPPORT_FACTOR_RATIO, MODE)
+print('--------------------------------    ' + str(device) + '    --------------------------------')
 
 # initialize agents and network optimizers and store them in dicts
 optimizers = dict()
@@ -124,7 +122,7 @@ while ep < NUM_EPISODES:
               'Gov':   np.empty([LENGTH_EPISODE, num_states])}
     rewards = {'FSC': [], 'Shell': []}
     actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
-    step_actions = {'FSC': [], 'Shell': []}
+    step_actions = {}
     done = False
 
     # loop over episode steps

@@ -8,10 +8,11 @@ np.random.seed(42)
 
 # TODO: put get_actions and predict in Agent as they are the same for ?all? agents
 class Agent(object):
-    def __init__(self, act_space, n_state):
+    def __init__(self, act_space, n_state, device):
         self.__state = None
         self.__n_neurons = 16
         self.__action_space = act_space
+        self._device = device
 
         # Define network
         self.__base_network = nn.Sequential(nn.Linear(n_state, self.__n_neurons),
@@ -31,7 +32,7 @@ class Agent(object):
 
 class Shell(Agent):
     def __init__(self, action_space, n_state, act_partners, device):
-        super().__init__(action_space, n_state)
+        super().__init__(action_space, n_state, device)
         self.__networks = dict()
 
         # initialize all necessary networks by copying the base network and send it to device
@@ -46,13 +47,13 @@ class Shell(Agent):
         for key in nets.keys():
             # detach() should not be a problem hear, as for optimization predict() is called again,
             # where no detach() is used
-            action_probs = self.predict(state, key).detach().numpy()
+            action_probs = self.predict(state, key).cpu().detach().numpy()
             actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})
         return actions
 
     def predict(self, state, partner_agt):
         # get the action probabilities as a tensor
-        action_probs = self.__networks[partner_agt](torch.FloatTensor(state))
+        action_probs = self.__networks[partner_agt](torch.FloatTensor(state).to(self._device))
         return action_probs
 
     def get_networks(self):
@@ -61,7 +62,7 @@ class Shell(Agent):
 
 class FSC(Agent):
     def __init__(self, action_space, n_state, act_partners, device):
-        super().__init__(action_space, n_state)
+        super().__init__(action_space, n_state, device)
         self.__networks = dict()
         self.__action_space = action_space
 
@@ -75,13 +76,13 @@ class FSC(Agent):
 
         # derive an action for each network (i.e., policy)
         for key in nets.keys():
-            action_probs = self.predict(state, key).detach().numpy()
+            action_probs = self.predict(state, key).cpu().detach().numpy()
             actions.update({key: np.random.choice(super().get_action_space(), p=action_probs)})
         return actions
 
     def predict(self, state, partner_agt):
         # get the action probabilities as a tensor
-        action_probs = self.__networks[partner_agt](torch.FloatTensor(state))
+        action_probs = self.__networks[partner_agt](torch.FloatTensor(state).to(self._device))
         return action_probs
 
     def get_networks(self):

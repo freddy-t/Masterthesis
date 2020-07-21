@@ -1,5 +1,3 @@
-import gym
-import torch
 from typing import Dict, List, NoReturn
 import numpy as np
 import pandas as pd
@@ -10,27 +8,40 @@ DATAFILE = Path("C:/Users/fredd/Desktop/freddy/sciebo/Masterarbeit/03_Konzeptent
            "00_interesting_data.xlsx"
 
 np.random.seed(42)
-# TODO: wird überhaupt eine gym environment benötigt, d.h. iwelche gym Funktionen benutzt?
 
 
-class FSCNetworkEnv(gym.Env):
+class FSCNetworkEnv(object):
 
-    def __init__(self):
-        self.__init_support = None
-        self.__init_resource = None
+    def __init__(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fsc, sup_ratio, mode='train'):
+        # setup environment parameters
+        shared, shell = load_data(agt)
+        self._sub_lvl = sub_lvl
+        self._episode_len = ep_len
+        self._delta_resource = delta_res
+        self._support_factor_fsc = sup_fsc
+        self._support_ratio = sup_ratio
+        self._mode = mode
+
+        # split to train and test data
+        shared_train, shared_test = split_data(shared)
+        shell_train, shell_test = split_data(shell)
+        if mode == 'train':
+            self._shared_data_orig = shared_train
+            self._shell_data_orig = shell_train
+        else:
+            self._shared_data_orig = shared_test
+            self._shell_data_orig = shell_test
+
+        # set initial states
+        self.__init_support = pd.DataFrame(init_sup, index=['support'], columns=agt)
+        self.__init_resource = pd.DataFrame(init_res, index=agt, columns=agt)
+
+        # create other parameters
         self._shared_data = None
-        self._shared_data_orig = None
         self._shell_data = None
-        self._shell_data_orig = None
         self._support = None
         self._resource = None
-        self._episode_len = None
-        self._delta_resource = None
-        self._support_factor_fsc = None
-        self._support_ratio = None
         self._current_step = None
-        self._sub_lvl = None
-        self._mode = None
         self.reward_shell_split = None
 
     def calc_reward(self, obs) -> Dict[str, float]:
@@ -46,8 +57,9 @@ class FSCNetworkEnv(gym.Env):
         # calculate reward for Shell
         own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
                       sd_data.iloc[step]['CO2_price']) / sl_data.iloc[step]['TotCap_USD']
-        r_shell = resource['Shell']['Shell'] * own_return + sub_lvl * resource.loc['Shell', 'FSC'] + \
-                  sub_lvl * self._support.loc['support', 'Shell'] * resource['Shell']['Shell']
+        r_shell =\
+            resource['Shell']['Shell'] * own_return + sub_lvl * resource.loc['Shell', 'FSC']\
+            + sub_lvl * self._support.loc['support', 'Shell'] * resource['Shell']['Shell']
         r.update({'Shell': r_shell})
 
         self.reward_shell_split = np.array([r_shell, resource['Shell']['Shell'] * own_return,
@@ -73,30 +85,6 @@ class FSCNetworkEnv(gym.Env):
         # set starting point of external data
         self.set_data()
         return [copy.copy(support), copy.copy(resource)]
-
-    def setup(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fsc, sup_ratio, mode) -> NoReturn:
-        # setup the environment
-        shared, shell = load_data(agt)
-        self._sub_lvl = sub_lvl
-        self._episode_len = ep_len
-        self._delta_resource = delta_res
-        self._support_factor_fsc = sup_fsc
-        self._support_ratio = sup_ratio
-        self._mode = mode
-
-        # split to train and test data
-        shared_train, shared_test = split_data(shared)
-        shell_train, shell_test = split_data(shell)
-        if mode == 'train':
-            self._shared_data_orig = shared_train
-            self._shell_data_orig = shell_train
-        else:
-            self._shared_data_orig = shared_test
-            self._shell_data_orig = shell_test
-
-        # set the initial states
-        self.__init_support = pd.DataFrame(init_sup, index=['support'], columns=agt)
-        self.__init_resource = pd.DataFrame(init_res, index=agt, columns=agt)
 
     def set_data(self) -> NoReturn:
         # set starting point of the external data randomly for reward calculation
