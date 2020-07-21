@@ -77,6 +77,8 @@ writer = SummaryWriter(SAVE_DIR)
 env = FSCNetworkEnv(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, SUPPORT_FACTOR_FSC,
                     SUPPORT_FACTOR_RATIO, MODE)
 print('--------------------------------    ' + str(device) + '    --------------------------------')
+if device == 'cuda':
+    print(torch.cuda.get_device_name(0))
 
 # initialize agents and network optimizers and store them in dicts
 optimizers = dict()

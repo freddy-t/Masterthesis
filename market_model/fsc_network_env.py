@@ -12,9 +12,10 @@ np.random.seed(42)
 
 class FSCNetworkEnv(object):
 
-    def __init__(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fsc, sup_ratio, mode='train'):
+    def __init__(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fsc, sup_ratio,
+                 mode='train', agg_weeks=1):
         # setup environment parameters
-        shared, shell = load_data(agt)
+        shared, shell = load_data(agt, agg_weeks)
         self._sub_lvl = sub_lvl
         self._episode_len = ep_len
         self._delta_resource = delta_res
@@ -246,7 +247,7 @@ class FSCNetworkEnv(object):
         return observation, reward, done, sup_calc, self.reward_shell_split
 
 
-def load_data(agents: list) -> [pd.DataFrame, pd.DataFrame]:
+def load_data(agents: list, num_weeks) -> [pd.DataFrame, pd.DataFrame]:
     # define all possible weeks to see which weekly data is missing
     all_weeks = pd.read_excel(DATAFILE, 'dates').set_index('fridays')
     co2_price = pd.read_excel(DATAFILE, 'EEX_EUA_Spot_Open_USD').set_index('fridays')
@@ -263,8 +264,28 @@ def load_data(agents: list) -> [pd.DataFrame, pd.DataFrame]:
         shell_data = load_shell(leading_df)
         print('--------------------------------    Shell data successfully loaded.    --------------------------------')
 
+    # aggregate weekly data of leading_df
+    df_lead = pd.DataFrame()
+    for j in range(0, leading_df.shape[0], num_weeks):
+        df_lead = df_lead.append(pd.DataFrame(
+            leading_df['CO2_price'].iloc[[i for i in range(j, j + num_weeks) if i < leading_df.shape[0]]].mean(axis=0),
+            columns=['CO2_price'],
+            index=[leading_df.index[j]]))
+
+    # aggregate weekly data of shell_data (sum of data is taken instead of mean)
+    tmp = []
+    for k, col in enumerate(shell_data.columns):
+        df = pd.DataFrame()
+        for j in range(0, shell_data.shape[0], num_weeks):
+            df = df.append(pd.DataFrame(
+                shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].sum(axis=0),
+                columns=[col],
+                index=[shell_data.index[j]]))
+        tmp.append(df)
+    df_shell = pd.concat([tmp[0], tmp[1], tmp[2]], axis=1)
+
     # modify the index, so that it is composed of the year and the week only
-    return index_to_m_y(leading_df), index_to_m_y(shell_data)
+    return index_to_m_y(df_lead), index_to_m_y(df_shell)
 
 
 def load_shell(ld_df: pd.DataFrame) -> pd.DataFrame:
