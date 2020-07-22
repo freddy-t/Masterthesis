@@ -13,7 +13,7 @@ np.random.seed(42)
 class FSCNetworkEnv(object):
 
     def __init__(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fsc, sup_ratio,
-                 mode='train', agg_weeks=1):
+                 n_state_space, mode='train',  agg_weeks=1):
         # setup environment parameters
         shared, shell = load_data(agt, agg_weeks)
         self._sub_lvl = sub_lvl
@@ -22,6 +22,7 @@ class FSCNetworkEnv(object):
         self._support_factor_fsc = sup_fsc
         self._support_ratio = sup_ratio
         self._mode = mode
+        self._n_state_space = n_state_space
 
         # split to train and test data
         shared_train, shared_test = split_data(shared)
@@ -53,7 +54,7 @@ class FSCNetworkEnv(object):
         sl_data = self._shell_data
 
         # calculate reward for FSC, subtract support of FSC as it is not changing
-        r = {'FSC': obs[0].loc['support'].sum() - 1}
+        r = {'FSC': np.array([obs[key][0] for key in obs.keys()]).sum() - 1}
 
         # calculate reward for Shell
         own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
@@ -64,8 +65,8 @@ class FSCNetworkEnv(object):
         r.update({'Shell': r_shell})
 
         self.reward_shell_split = np.array([r_shell, resource['Shell']['Shell'] * own_return,
-                                            sub_lvl*resource.loc['Shell', 'FSC'],
-                                            sub_lvl*self._support.loc['support', 'Shell']*resource['Shell']['Shell']])
+                                            sub_lvl * resource.loc['Shell', 'FSC'],
+                                            sub_lvl * self._support.loc['support', 'Shell']*resource['Shell']['Shell']])
         return r
 
     def check_if_done(self) -> bool:
@@ -85,7 +86,14 @@ class FSCNetworkEnv(object):
         self._resource = copy.copy(resource)
         # set starting point of external data
         self.set_data()
-        return [copy.copy(support), copy.copy(resource)]
+
+        state = dict()
+        # extract support and resource assignment for agent as array
+        for key in self._n_state_space.keys():
+            state_0 = np.array(support.loc['support'][key])
+            state[key] = np.append(state_0, resource.loc[key])
+
+        return state
 
     def set_data(self) -> NoReturn:
         # set starting point of the external data randomly for reward calculation
@@ -153,17 +161,22 @@ class FSCNetworkEnv(object):
                 # if actions are not feasible, keep the old resource assignment
                 if (True in (resource.loc[act_agt][:] < 0).values) or \
                         (True in (resource.loc[act_agt][:] > 1).values):
-                    print('---------------------    Actions {} of agent {} were not feasible.    ---------------------' \
+                    print('--------------------    Actions {} of agent {} were not feasible.    --------------------' \
                           .format(actions[act_agt], act_agt))
                     resource.loc[act_agt] = orig_resource.loc[act_agt]
 
         # check if resource calculations were correct
         if (resource.sum(axis=1).sum() / len(resource.index) != 1) or \
                 (True in (resource[:][:] < 0).values) or (True in (resource[:][:] > 1).values):
-            raise ValueError('Resource assignment calculation went wrong')
+            raise ValueError('Resource assignment calculation went wrong: FSCNetworkEnv.step()')
 
-        observation = [copy.copy(support), copy.copy(resource)]
+        # extract support and resource assignment for agent as array
+        observation = dict()
+        for key in self._n_state_space.keys():
+            state_0 = np.array(support.loc['support'][key])
+            observation[key] = np.append(state_0, resource.loc[key])
         reward = self.calc_reward(observation)
+
         # update step and check if finished
         self._current_step += 1
         done = self.check_if_done()
@@ -237,7 +250,7 @@ class FSCNetworkEnv(object):
         # check if resource calculations were correct
         if (resource.sum(axis=1).sum() / len(resource.index) != 1) or \
                 (True in (resource[:][:] < 0).values) or (True in (resource[:][:] > 1).values):
-            raise ValueError('Resource assignment calculation went wrong')
+            raise ValueError('Resource assignment calculation went wrong: FSCNetworkEnv.step()')
 
         observation = [copy.copy(support), copy.copy(resource)]
         reward = self.calc_reward(observation)
@@ -262,37 +275,45 @@ def load_data(agents: list, num_weeks) -> [pd.DataFrame, pd.DataFrame]:
     # load agent specific data
     if 'Shell' in agents:
         shell_data = load_shell(leading_df)
-        print('--------------------------------    Shell data successfully loaded.    --------------------------------')
+# TODO einkommentieren und unten löschen
+    # # aggregate weekly data of leading_df
+    # df_lead = pd.DataFrame()
+    # for j in range(0, leading_df.shape[0], num_weeks):
+    #     df_lead = df_lead.append(pd.DataFrame(
+    #         leading_df['CO2_price'].iloc[[i for i in range(j, j + num_weeks) if i < leading_df.shape[0]]].mean(axis=0),
+    #         columns=['CO2_price'],
+    #         index=[leading_df.index[j]]))
+    #
+    # # aggregate weekly data of shell_data (sum of data is taken instead of mean for some columns)
+    # tmp = []
+    # for k, col in enumerate(shell_data.columns):
+    #     df = pd.DataFrame()
+    #     for j in range(0, shell_data.shape[0], num_weeks):
+    #         # profitability data must be averaged
+    #         if col == 'ROE' or col == 'ROA' or col == 'ROC':
+    #             df = df.append(pd.DataFrame(
+    #                 shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].mean(axis=0),
+    #                 columns=[col],
+    #                 index=[shell_data.index[j]]))
+    #         else:
+    #             df = df.append(pd.DataFrame(
+    #                 shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].sum(axis=0),
+    #                 columns=[col],
+    #                 index=[shell_data.index[j]]))
+    #     tmp.append(df)
+    # df_shell = pd.concat([i for i in tmp], axis=1)
+    df_lead = leading_df
+    df_shell = shell_data
 
-    # aggregate weekly data of leading_df
-    df_lead = pd.DataFrame()
-    for j in range(0, leading_df.shape[0], num_weeks):
-        df_lead = df_lead.append(pd.DataFrame(
-            leading_df['CO2_price'].iloc[[i for i in range(j, j + num_weeks) if i < leading_df.shape[0]]].mean(axis=0),
-            columns=['CO2_price'],
-            index=[leading_df.index[j]]))
-
-    # aggregate weekly data of shell_data (sum of data is taken instead of mean)
-    tmp = []
-    for k, col in enumerate(shell_data.columns):
-        df = pd.DataFrame()
-        for j in range(0, shell_data.shape[0], num_weeks):
-            df = df.append(pd.DataFrame(
-                shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].sum(axis=0),
-                columns=[col],
-                index=[shell_data.index[j]]))
-        tmp.append(df)
-    df_shell = pd.concat([tmp[0], tmp[1], tmp[2]], axis=1)
+    print('--------------------------------    Data successfully loaded.    --------------------------------')
 
     # modify the index, so that it is composed of the year and the week only
     return index_to_m_y(df_lead), index_to_m_y(df_shell)
 
 
 def load_shell(ld_df: pd.DataFrame) -> pd.DataFrame:
-    # TODO: load ROC, ROA und ROE
-
     # load excel and set index
-    shell_orig = pd.read_excel(DATAFILE, 'shell', usecols=[1, 3, 5, 7]).set_index(['Date'])
+    shell_orig = pd.read_excel(DATAFILE, 'shell', usecols=[1, 3, 5, 7, 8, 9, 10]).set_index(['Date'])
 
     # shift shell entries and save index values for further data handling
     shell_orig = shell_orig.shift(1, freq='h')
@@ -311,23 +332,32 @@ def load_shell(ld_df: pd.DataFrame) -> pd.DataFrame:
         num_ent = shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), 'CO2_price'].count()
         for key in shell.keys():
             if key != 'CO2_price':
-                shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), key] \
-                    = shell.loc[idx_val[i], key] / num_ent
+                # profitability data must not be averaged
+                if key == 'ROE' or key == 'ROA' or key == 'ROC':
+                    shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), key] \
+                        = shell.loc[idx_val[i], key]
+                else:
+                    shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), key] \
+                        = shell.loc[idx_val[i], key] / num_ent
 
     # calculate weekly data for first quarter
     num_ent = shell.loc[shell.index < idx_val[tmp], 'CO2_price'].count()
     for key in shell.keys():
         if key != 'CO2_price':
-            shell.loc[shell.index < idx_val[tmp], key] = shell.loc[idx_val[tmp], key] / num_ent
+            # profitability data must not be averaged
+            if key == 'ROE' or key == 'ROA' or key == 'ROC':
+                shell.loc[shell.index < idx_val[tmp], key] = shell.loc[idx_val[tmp], key]
+            else:
+                shell.loc[shell.index < idx_val[tmp], key] = shell.loc[idx_val[tmp], key] / num_ent
 
     # remove shifted shell values
     shell.dropna(axis='index', how='any', subset=['CO2_price'], inplace=True)
 
     # check if translation from quarterly to weekly data was correct
-    val_test = [shell[key].sum() == shell_orig[key].sum() for key in shell.keys() if (key != 'CO2_price')]
+    val_test = [shell[key].sum() == shell_orig[key].sum() for key in shell.keys()
+                if (key != 'CO2_price' and key != 'ROE' and key != 'ROA' and key != 'ROC')]
     if val_test.count(False):
-        print('--------------    Translation from quarterly to weekly data went wrong. Please check!    --------------')
-        # TODO throw exception
+        raise ValueError('Translation from quarterly to weekly data went wrong: fsc_network_env.load_shell()')
 
     # reshift to original dates
     shell = shell.shift(-2, freq='D')

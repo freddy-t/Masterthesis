@@ -97,3 +97,19 @@ class Gov(Agent):
     def get_actions(self, state) -> dict:
         # government is performing maintain as action. That equals an passiv agent.
         return {'Shell': 0, 'FSC': 0}
+
+
+def init_agents(act_space, n_states, change_all, act_agt, lr, device):
+    optimizers = dict()
+    all_agents = dict()
+    for agt in act_agt:
+        agt_optim = dict()
+        all_agents.update({agt: eval(agt)(act_space, n_states[agt], change_all[agt], device)})
+        # gov is passiv agent, thus need no optimizer
+        if agt != 'Gov':
+            networks = all_agents[agt].get_networks()
+            for par_agt in networks.keys():
+                agt_optim.update({par_agt: torch.optim.Adam(networks[par_agt].parameters(), lr=lr)})
+            optimizers.update({agt: agt_optim})
+
+    return optimizers, all_agents

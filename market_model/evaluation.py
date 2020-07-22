@@ -4,8 +4,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-# TODO: model must be evaluated eval() after loading
-# TODO: script verschönern
 
 DATE = '2020-07-17_debug'
 EXP = '3_n_ep1000_l_ep100_lr0.001'
