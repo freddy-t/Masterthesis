@@ -12,15 +12,14 @@ np.random.seed(42)
 
 class FSCNetworkEnv(object):
 
-    def __init__(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fsc, sup_ratio,
-                 n_state_space, mode='train',  agg_weeks=1):
+    def __init__(self, agt, init_sup, init_res, sub_lvl, ep_len, delta_res, sup_fac, n_state_space,
+                 mode='train',  agg_weeks=2):
         # setup environment parameters
         shared, shell = load_data(agt, agg_weeks)
         self._sub_lvl = sub_lvl
         self._episode_len = ep_len
         self._delta_resource = delta_res
-        self._support_factor_fsc = sup_fsc
-        self._support_ratio = sup_ratio
+        self._support_factor = sup_fac
         self._mode = mode
         self._n_state_space = n_state_space
 
@@ -95,6 +94,11 @@ class FSCNetworkEnv(object):
 
         return state
 
+    def set(self, delta_res, sup_fac):
+        # set missing parameters, if they haven't been set while initializing the environment
+        self._delta_resource = delta_res
+        self._support_factor = sup_fac
+
     def set_data(self) -> NoReturn:
         # set starting point of the external data randomly for reward calculation
         ep_len = self._episode_len
@@ -107,8 +111,7 @@ class FSCNetworkEnv(object):
 
     def step(self, actions) -> (List[pd.DataFrame], Dict[str, float], bool):
         support = self._support
-        support_factor = self._support_factor_fsc
-        support_ratio = self._support_ratio
+        support_factor = self._support_factor
         resource = self._resource
         delta_resource = self._delta_resource
 
@@ -123,13 +126,11 @@ class FSCNetworkEnv(object):
                     if agt != par_agt:
                         # change to partner agent is only initiated, support is different
                         if orig_support.loc['support', agt] < orig_support.loc['support', par_agt]:
-                            factor = support_factor
+                            factor = support_factor[par_agt]
                         elif orig_support.loc['support', agt] > orig_support.loc['support', par_agt]:
-                            factor = -support_factor
+                            factor = -support_factor[par_agt]
                         else:
                             factor = 0
-                        if par_agt == 'Gov' or par_agt == 'Shell':
-                            factor = factor * support_ratio
                         add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
 
                 # change in support is based on previous support --> copy is used
@@ -149,7 +150,7 @@ class FSCNetworkEnv(object):
             if act_agt != 'Gov':
                 for part_agt in actions[act_agt].keys():
                     # update value for resource assignment if it is between 0 and 1
-                    val = resource.loc[act_agt, part_agt] + delta_resource * actions[act_agt][part_agt]
+                    val = resource.loc[act_agt, part_agt] + delta_resource * (actions[act_agt][part_agt] - 1)
                     if (0.0 <= val) and (val <= 1.0):
                         resource.loc[act_agt, part_agt] = val
 
@@ -185,8 +186,7 @@ class FSCNetworkEnv(object):
 
     def step_calc(self, actions) -> (List[pd.DataFrame], Dict, bool, Dict, np.ndarray):
         support = self._support
-        support_factor = self._support_factor_fsc
-        support_ratio = self._support_ratio
+        support_factor = self._support_factor
         resource = self._resource
         delta_resource = self._delta_resource
         sup_calc = {'Shell': [], 'Gov': []}
@@ -203,13 +203,11 @@ class FSCNetworkEnv(object):
                     if agt != par_agt:
                         # change to partner agent is only initiated, support is different
                         if orig_support.loc['support', agt] < orig_support.loc['support', par_agt]:
-                            factor = support_factor
+                            factor = support_factor[par_agt]
                         elif orig_support.loc['support', agt] > orig_support.loc['support', par_agt]:
-                            factor = -support_factor
+                            factor = -support_factor[par_agt]
                         else:
                             factor = 0
-                        if par_agt == 'Gov' or par_agt == 'Shell':
-                            factor = factor * support_ratio
                         sup_calc[agt].append(factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2)
                         add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
 
@@ -231,7 +229,7 @@ class FSCNetworkEnv(object):
             if act_agt != 'Gov':
                 for part_agt in actions[act_agt].keys():
                     # update value for resource assignment if it is between 0 and 1
-                    val = resource.loc[act_agt, part_agt] + delta_resource * actions[act_agt][part_agt]
+                    val = resource.loc[act_agt, part_agt] + delta_resource * (actions[act_agt][part_agt] - 1)
                     if (0.0 <= val) and (val <= 1.0):
                         resource.loc[act_agt, part_agt] = val
 
@@ -250,9 +248,14 @@ class FSCNetworkEnv(object):
         # check if resource calculations were correct
         if (resource.sum(axis=1).sum() / len(resource.index) != 1) or \
                 (True in (resource[:][:] < 0).values) or (True in (resource[:][:] > 1).values):
-            raise ValueError('Resource assignment calculation went wrong: FSCNetworkEnv.step()')
+            raise ValueError('Resource assignment calculation went wrong: FSCNetworkEnv.step_calc()')
 
-        observation = [copy.copy(support), copy.copy(resource)]
+        # extract support and resource assignment for agent as array
+        observation = dict()
+        for key in self._n_state_space.keys():
+            state_0 = np.array(support.loc['support'][key])
+            observation[key] = np.append(state_0, resource.loc[key])
+
         reward = self.calc_reward(observation)
         # update step
         self._current_step += 1
@@ -275,35 +278,35 @@ def load_data(agents: list, num_weeks) -> [pd.DataFrame, pd.DataFrame]:
     # load agent specific data
     if 'Shell' in agents:
         shell_data = load_shell(leading_df)
-# TODO einkommentieren und unten löschen
-    # # aggregate weekly data of leading_df
-    # df_lead = pd.DataFrame()
-    # for j in range(0, leading_df.shape[0], num_weeks):
-    #     df_lead = df_lead.append(pd.DataFrame(
-    #         leading_df['CO2_price'].iloc[[i for i in range(j, j + num_weeks) if i < leading_df.shape[0]]].mean(axis=0),
-    #         columns=['CO2_price'],
-    #         index=[leading_df.index[j]]))
-    #
-    # # aggregate weekly data of shell_data (sum of data is taken instead of mean for some columns)
-    # tmp = []
-    # for k, col in enumerate(shell_data.columns):
-    #     df = pd.DataFrame()
-    #     for j in range(0, shell_data.shape[0], num_weeks):
-    #         # profitability data must be averaged
-    #         if col == 'ROE' or col == 'ROA' or col == 'ROC':
-    #             df = df.append(pd.DataFrame(
-    #                 shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].mean(axis=0),
-    #                 columns=[col],
-    #                 index=[shell_data.index[j]]))
-    #         else:
-    #             df = df.append(pd.DataFrame(
-    #                 shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].sum(axis=0),
-    #                 columns=[col],
-    #                 index=[shell_data.index[j]]))
-    #     tmp.append(df)
-    # df_shell = pd.concat([i for i in tmp], axis=1)
-    df_lead = leading_df
-    df_shell = shell_data
+
+    # aggregate weekly data of leading_df
+    df_lead = pd.DataFrame()
+    for j in range(0, leading_df.shape[0], num_weeks):
+        df_lead = df_lead.append(pd.DataFrame(
+            leading_df['CO2_price'].iloc[[i for i in range(j, j + num_weeks) if i < leading_df.shape[0]]].mean(axis=0),
+            columns=['CO2_price'],
+            index=[leading_df.index[j]]))
+
+    # aggregate weekly data of shell_data (sum of data is taken instead of mean for some columns)
+    tmp = []
+    for k, col in enumerate(shell_data.columns):
+        df = pd.DataFrame()
+        for j in range(0, shell_data.shape[0], num_weeks):
+            # profitability data must be averaged
+            if col == 'ROE' or col == 'ROA' or col == 'ROC':
+                df = df.append(pd.DataFrame(
+                    shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].mean(axis=0),
+                    columns=[col],
+                    index=[shell_data.index[j]]))
+            else:
+                df = df.append(pd.DataFrame(
+                    shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].sum(axis=0),
+                    columns=[col],
+                    index=[shell_data.index[j]]))
+        tmp.append(df)
+    df_shell = pd.concat([i for i in tmp], axis=1)
+    # df_lead = leading_df
+    # df_shell = shell_data
 
     print('--------------------------------    Data successfully loaded.    --------------------------------')
 
