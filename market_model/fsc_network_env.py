@@ -53,7 +53,7 @@ class FSCNetworkEnv(object):
         sl_data = self._shell_data
 
         # calculate reward for FSC, subtract support of FSC as it is not changing
-        r = {'FSC': np.array([obs[key][0] for key in obs.keys()]).sum() - 1}
+        r = {'FSC': np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum()}
 
         # calculate reward for Shell
         own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
@@ -76,7 +76,22 @@ class FSCNetworkEnv(object):
         else:
             return False
 
-    def reset(self) -> List[pd.DataFrame]:
+    def get_state(self, support, resource) -> Dict[str, np.ndarray]:
+        state = dict()
+        n_state_space = self._n_state_space
+        # extract support and resource assignment for agent as array
+        for key in n_state_space.keys():
+            # first state entry for FSC is support of the other agents
+            if key == 'FSC':
+                state_0 = np.array([0 if agt == 'FSC' else support.loc['support'][agt]
+                                    for agt in n_state_space.keys()]).sum()
+            else:
+                state_0 = np.array(support.loc['support'][key])
+            state[key] = np.append(state_0, resource.loc[key])
+
+        return state
+
+    def reset(self) -> Dict[str, np.ndarray]:
         self._current_step = 0
         support = self.__init_support
         resource = self.__init_resource
@@ -86,13 +101,7 @@ class FSCNetworkEnv(object):
         # set starting point of external data
         self.set_data()
 
-        state = dict()
-        # extract support and resource assignment for agent as array
-        for key in self._n_state_space.keys():
-            state_0 = np.array(support.loc['support'][key])
-            state[key] = np.append(state_0, resource.loc[key])
-
-        return state
+        return self.get_state(support, resource)
 
     def set(self, delta_res, sup_fac):
         # set missing parameters, if they haven't been set while initializing the environment
@@ -109,7 +118,7 @@ class FSCNetworkEnv(object):
         self._shell_data = sl.iloc[start:start + ep_len]
         self._shared_data = sd.iloc[start:start + ep_len]
 
-    def step(self, actions) -> (List[pd.DataFrame], Dict[str, float], bool):
+    def step(self, actions) -> (Dict[str, np.ndarray], Dict[str, float], bool):
         support = self._support
         support_factor = self._support_factor
         resource = self._resource
@@ -172,10 +181,7 @@ class FSCNetworkEnv(object):
             raise ValueError('Resource assignment calculation went wrong: FSCNetworkEnv.step()')
 
         # extract support and resource assignment for agent as array
-        observation = dict()
-        for key in self._n_state_space.keys():
-            state_0 = np.array(support.loc['support'][key])
-            observation[key] = np.append(state_0, resource.loc[key])
+        observation = self.get_state(support, resource)
         reward = self.calc_reward(observation)
 
         # update step and check if finished
@@ -184,7 +190,7 @@ class FSCNetworkEnv(object):
 
         return observation, reward, done
 
-    def step_calc(self, actions) -> (List[pd.DataFrame], Dict, bool, Dict, np.ndarray):
+    def step_calc(self, actions) -> (Dict[str, np.ndarray], Dict, bool, Dict, np.ndarray):
         support = self._support
         support_factor = self._support_factor
         resource = self._resource
@@ -251,12 +257,9 @@ class FSCNetworkEnv(object):
             raise ValueError('Resource assignment calculation went wrong: FSCNetworkEnv.step_calc()')
 
         # extract support and resource assignment for agent as array
-        observation = dict()
-        for key in self._n_state_space.keys():
-            state_0 = np.array(support.loc['support'][key])
-            observation[key] = np.append(state_0, resource.loc[key])
-
+        observation = self.get_state(support, resource)
         reward = self.calc_reward(observation)
+
         # update step
         self._current_step += 1
         done = self.check_if_done()

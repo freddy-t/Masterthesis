@@ -31,7 +31,7 @@ INIT_RESOURCE = [[0.95,   0.05, 0.00],                                       # F
 SUB_LVL = 0.05                           # level of subsidy
 
 # RL parameters
-LENGTH_EPISODE = 157                   # limits are 1 -> 313, 2 -> 157, 3 -> 105, 4 -> 79
+LENGTH_EPISODE = 157                   # limits are based on aggregation 1 -> 313, 2 -> 157, 3 -> 105, 4 -> 79
 NUM_EPISODES = 10
 LEARNING_RATE = 0.001
 BATCH_SIZE = NUM_EPISODES

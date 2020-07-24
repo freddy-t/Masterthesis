@@ -36,12 +36,12 @@ INIT_RESOURCE = [[0.95,   0.05, 0.00],                                       # F
                  [0.05,   0.10, 0.85]]                                       # Gov
 SUB_LVL = 0.05                           # level of subsidy
 DELTA_RESOURCE = 0.005                   # factor by which resource assignment is changed due to action
-BETAS = {'FSC': 0.001,                    # factor influences how fast support is changed due to FSC interaction
+BETAS = {'FSC': 0.001,                   # factor influences how fast support is changed due to FSC interaction
          'Shell': 0.001,
          'Gov': 0.001}
 
 # RL parameters
-LENGTH_EPISODE = 10                   # limit are 1 -> 313, 2 -> 157, 3 -> 105, 4 -> 79
+LENGTH_EPISODE = 10                   # limits are based on aggregation 1 -> 313, 2 -> 157, 3 -> 105, 4 -> 79
 NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
 BATCH_SIZE = 5
