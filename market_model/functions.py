@@ -68,3 +68,13 @@ def create_val_dir(debug_flag):
         os.mkdir(save_dir)
 
     return save_dir
+
+
+def create_dict(required_nets, act_agt):
+    new_dict = dict()
+    for agt in act_agt:
+        tmp = dict()
+        for par_agt in required_nets[agt]:
+            tmp[par_agt] = []
+        new_dict[agt] = tmp
+    return new_dict

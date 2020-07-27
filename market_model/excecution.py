@@ -3,8 +3,8 @@ import copy
 import time
 import numpy as np
 from agents import init_agents
-from fsc_network_env import FSCNetworkEnv
-from functions import discount_rewards, create_dir
+from fsc_network_env import FSCNetworkEnv, FSCNetworkEnvAlternative
+from functions import discount_rewards, create_dir, create_dict
 from torch.utils.tensorboard import SummaryWriter
 
 # TODO: if gov should be active: look for "passiv" and change the lines
@@ -14,15 +14,18 @@ from torch.utils.tensorboard import SummaryWriter
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEBUG = True             # True if in debug mode
-save_calc = False           # True if support and resource calculations should be saved
+save_calc = True          # True if support and resource calculations should be saved
 store_graph = False         # True if computational graph of network should be saved
 MODE = 'train'              # 'train' for training mode, otherwise testing data is used
 
 # model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
-CHANGEABLE_ALLOC = {'FSC':   ['Shell', 'Gov'],
-                    'Shell': ['FSC'],
-                    'Gov':   []}
+# REQUIRED_NEURAL_NETS = {'FSC':   ['Shell', 'Gov'],
+#                         'Shell': ['FSC'],
+#                         'Gov':   []}
+REQUIRED_NEURAL_NETS = {'FSC':   ['All'],   # neural nets for alternative environment
+                        'Shell': ['FSC'],
+                        'Gov':   []}
 ACT_AGT = ['FSC', 'Shell']               # set the active agents
 ACTION_SPACE = [0, 1, 2]                # action definition: 0 = decrease, 1 = maintain, 2 = increase
 N_STATE_SPACE = {'FSC': 4,
@@ -39,6 +42,9 @@ DELTA_RESOURCE = 0.005                   # factor by which resource assignment i
 BETAS = {'FSC': 0.001,                   # factor influences how fast support is changed due to FSC interaction
          'Shell': 0.001,
          'Gov': 0.001}
+DELTA_RESEARCH = 0.1
+BASE_IMPACTS = {'Shell': [0.6, 0.5],     # impact according to action 2 and 3 on agent
+                'Gov':   [0.2, 0.7]}
 
 # RL parameters
 LENGTH_EPISODE = 10                   # limits are based on aggregation 1 -> 313, 2 -> 157, 3 -> 105, 4 -> 79
@@ -75,14 +81,16 @@ with open((SAVE_DIR / 'config.txt'), 'w') as file:
 
 # create environment
 writer = SummaryWriter(SAVE_DIR)
-env = FSCNetworkEnv(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, BETAS,
-                    N_STATE_SPACE, MODE)
+# env = FSCNetworkEnv(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, BETAS,
+#                     N_STATE_SPACE, MODE, agg_weeks=4)
+env = FSCNetworkEnvAlternative(AGENTS, INIT_SUPPORT, INIT_RESOURCE, SUB_LVL, LENGTH_EPISODE, DELTA_RESOURCE, BETAS,
+                               N_STATE_SPACE, DELTA_RESEARCH, BASE_IMPACTS, MODE, agg_weeks=4)
 print('--------------------------------    ' + str(device) + '    --------------------------------')
 if device == 'cuda':
     print(torch.cuda.get_device_name(0))
 
 # initialize agents and network optimizers and store them in dicts
-optimizers, all_agents = init_agents(ACTION_SPACE, N_STATE_SPACE, CHANGEABLE_ALLOC, ACT_AGT, LEARNING_RATE, device)
+optimizers, all_agents = init_agents(ACTION_SPACE, N_STATE_SPACE, REQUIRED_NEURAL_NETS, ACT_AGT, LEARNING_RATE, device)
 
 # save initial agents
 torch.save(all_agents, (SAVE_DIR / 'agents_init'))
@@ -90,7 +98,7 @@ torch.save(all_agents, (SAVE_DIR / 'agents_init'))
 # initialise loop variables
 total_rewards = {'FSC': [], 'Shell': []}
 batch_returns = {'FSC': [], 'Shell': []}
-batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
+batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
 batch_states = {'FSC':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
                 'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
@@ -112,7 +120,9 @@ while ep < NUM_EPISODES:
               'Shell': np.empty([LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
               'Gov':   np.empty([LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
     rewards = {'FSC': [], 'Shell': []}
-    actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
+    actions = {'FSC': {'Shell': [], 'Gov': []},
+               'Shell': {'FSC': []}}
+    actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
     step_actions = {}
     done = False
 
@@ -220,7 +230,7 @@ while ep < NUM_EPISODES:
 
                 # empty batch
                 batch_returns = {'FSC': [], 'Shell': []}
-                batch_actions = {'FSC': {'Shell': [], 'Gov': []}, 'Shell': {'FSC': []}}
+                batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
                 batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
                                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
                                 'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
