@@ -4,6 +4,8 @@ import os
 import shutil
 from pathlib import Path
 
+PATH_SAVED = Path('../saved_data')
+
 
 def discount_rewards(rewards, gamma):
     # discount future rewards with gamma
@@ -14,13 +16,13 @@ def discount_rewards(rewards, gamma):
     return r
 
 
-def create_dir(debug_flag, n_ep, l_ep, lr):
+def create_dir(debug_flag, n_ep, l_ep, lr, env):
     # function creates directory to store data of the training/testing
-    dir_path = Path('../saved_data') / str(datetime.datetime.now().date())
+    dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env)
 
     # create directory for debugging purposes by deleting or just creating it
     if debug_flag:
-        bug_path = Path('../saved_data') / (str(datetime.datetime.now().date()) + '_debug')
+        bug_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env + '_debug')
         if not bug_path.is_dir():
             os.mkdir(bug_path)
         else:
@@ -43,13 +45,13 @@ def create_dir(debug_flag, n_ep, l_ep, lr):
     return save_dir
 
 
-def create_val_dir(debug_flag):
+def create_val_dir(debug_flag, env):
     # function creates directory to store data of the training/testing
-    dir_path = Path('../saved_data') / (str(datetime.datetime.now().date()) + '_val')
+    dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env + '_val')
 
     # create directory for debugging purposes by deleting or just creating it
     if debug_flag:
-        bug_path = Path('../saved_data') / (str(datetime.datetime.now().date()) + '_val_debug')
+        bug_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env + '_val_debug')
         if not bug_path.is_dir():
             os.mkdir(bug_path)
         else:

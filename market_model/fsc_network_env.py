@@ -2,10 +2,11 @@ from typing import Dict, List, NoReturn
 import numpy as np
 import pandas as pd
 import copy
+import torch
 from pathlib import Path
 
-DATAFILE = Path("C:/Users/fredd/Desktop/freddy/sciebo/Masterarbeit/03_Konzeptentwicklung/Daten") / \
-           "00_interesting_data.xlsx"
+DATADIR = Path("C:/Users/fredd/Desktop/freddy/sciebo/Masterarbeit/03_Konzeptentwicklung/Daten")
+EXCELFILE = "00_interesting_data.xlsx"
 
 np.random.seed(42)
 
@@ -103,10 +104,12 @@ class FSCNetworkEnv(object):
 
         return self.get_state(support, resource)
 
-    def set(self, delta_res, sup_fac):
+    def set(self, delta_res, sup_fac, delta_search, sub_lvl):
         # set missing parameters, if they haven't been set while initializing the environment
         self._delta_resource = delta_res
         self._support_factor = sup_fac
+        self._sub_lvl = sub_lvl
+        _ = delta_search
 
     def set_data(self) -> NoReturn:
         # set starting point of the external data randomly for reward calculation
@@ -370,10 +373,12 @@ class FSCNetworkEnvAlternative(object):
 
         return state
 
-    def set(self, delta_res, sup_fac):
+    def set(self, delta_res, sup_fac, delta_search, sub_lvl):
         # set missing parameters, if they haven't been set while initializing the environment
         self._delta_resource = delta_res
         self._support_factor = sup_fac
+        self._delta_research = delta_search
+        self._sub_lvl = sub_lvl
 
     def set_data(self) -> NoReturn:
         # set starting point of the external data randomly for reward calculation
@@ -577,13 +582,21 @@ class FSCNetworkEnvAlternative(object):
 
 
 def load_data(agents: list, num_weeks) -> [pd.DataFrame, pd.DataFrame]:
-    # define all possible weeks to see which weekly data is missing
-    all_weeks = pd.read_excel(DATAFILE, 'dates').set_index('fridays')
-    co2_price = pd.read_excel(DATAFILE, 'EEX_EUA_Spot_Open_USD').set_index('fridays')
-    leading_df = all_weeks.join(co2_price)
 
-    # fill missing data with linear interpolation
-    leading_df.interpolate(inplace=True, axis='index')
+    # if data was already created, just load it
+    if (DATADIR / 'df_lead_agg_weeks_{}'.format(num_weeks)).is_file():
+        print('--------------------------      loaded saved data successfully      --------------------------')
+        return torch.load((DATADIR / 'df_lead_agg_weeks_{}'.format(num_weeks))), \
+               torch.load((DATADIR / 'df_shell_agg_weeks_{}'.format(num_weeks)))
+
+    # define all possible weeks to see which weekly data is missing
+    file = DATADIR / EXCELFILE
+    all_weeks = pd.read_excel(file, 'dates').set_index('fridays')
+    co2_full = pd.read_excel(file, 'CFI2Zc1_rolling_Dec_contract').set_index('fridays')
+    co2_missing = pd.read_excel(file, 'missing_data').set_index('date')
+    tmp1 = all_weeks.join(co2_missing).dropna(axis='index')
+    tmp2 = all_weeks.join(co2_full).dropna(axis='index')
+    leading_df = pd.concat([tmp1, tmp2])
 
     # remove 2020 data, as there is no quarterly data available
     leading_df.drop(leading_df[leading_df.index > pd.Timestamp(year=2020, month=1, day=1)].index, inplace=True)
@@ -599,37 +612,40 @@ def load_data(agents: list, num_weeks) -> [pd.DataFrame, pd.DataFrame]:
             leading_df['CO2_price'].iloc[[i for i in range(j, j + num_weeks) if i < leading_df.shape[0]]].mean(axis=0),
             columns=['CO2_price'],
             index=[leading_df.index[j]]))
-# TODO einkommentieren und unten auskommentiere
+
     # aggregate weekly data of shell_data (sum of data is taken instead of mean for some columns)
-    # tmp = []
-    # for k, col in enumerate(shell_data.columns):
-    #     df = pd.DataFrame()
-    #     for j in range(0, shell_data.shape[0], num_weeks):
-    #         # profitability data must be averaged
-    #         if col == 'ROE' or col == 'ROA' or col == 'ROC':
-    #             df = df.append(pd.DataFrame(
-    #                 shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].mean(axis=0),
-    #                 columns=[col],
-    #                 index=[shell_data.index[j]]))
-    #         else:
-    #             df = df.append(pd.DataFrame(
-    #                 shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].sum(axis=0),
-    #                 columns=[col],
-    #                 index=[shell_data.index[j]]))
-    #     tmp.append(df)
-    # df_shell = pd.concat([i for i in tmp], axis=1)
-    df_lead = leading_df
-    df_shell = shell_data
+    tmp = []
+    for k, col in enumerate(shell_data.columns):
+        df = pd.DataFrame()
+        for j in range(0, shell_data.shape[0], num_weeks):
+            # profitability data must be averaged
+            if col == 'ROE' or col == 'ROA' or col == 'ROC':
+                df = df.append(pd.DataFrame(
+                    shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].mean(axis=0),
+                    columns=[col],
+                    index=[shell_data.index[j]]))
+            else:
+                df = df.append(pd.DataFrame(
+                    shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].sum(axis=0),
+                    columns=[col],
+                    index=[shell_data.index[j]]))
+        tmp.append(df)
+    df_shell = pd.concat([i for i in tmp], axis=1)
 
     print('--------------------------------    Data successfully loaded.    --------------------------------')
-    # TODO: geladene und bearbeitete daten speichern
+
     # modify the index, so that it is composed of the year and the week only
-    return index_to_m_y(df_lead), index_to_m_y(df_shell)
+    df_lead = index_to_m_y(df_lead)
+    df_shell = index_to_m_y(df_shell)
+    torch.save(df_lead, (DATADIR / 'df_lead_agg_weeks_{}'.format(num_weeks)))
+    torch.save(df_shell, (DATADIR / 'df_shell_agg_weeks_{}'.format(num_weeks)))
+
+    return df_lead, df_shell
 
 
 def load_shell(ld_df: pd.DataFrame) -> pd.DataFrame:
     # load excel and set index
-    shell_orig = pd.read_excel(DATAFILE, 'shell', usecols=[1, 3, 5, 7, 8, 9, 10]).set_index(['Date'])
+    shell_orig = pd.read_excel(DATADIR / EXCELFILE, 'shell', usecols=[1, 3, 5, 7, 8, 9, 10]).set_index(['Date'])
 
     # shift shell entries and save index values for further data handling
     shell_orig = shell_orig.shift(1, freq='h')
@@ -670,7 +686,7 @@ def load_shell(ld_df: pd.DataFrame) -> pd.DataFrame:
     shell.dropna(axis='index', how='any', subset=['CO2_price'], inplace=True)
 
     # check if translation from quarterly to weekly data was correct
-    val_test = [shell[key].sum() == shell_orig[key].sum() for key in shell.keys()
+    val_test = [(shell[key].sum() - shell_orig[key].sum())**2 < 1.0 for key in shell.keys()
                 if (key != 'CO2_price' and key != 'ROE' and key != 'ROA' and key != 'ROC')]
     if val_test.count(False):
         raise ValueError('Translation from quarterly to weekly data went wrong: fsc_network_env.load_shell()')
@@ -690,7 +706,7 @@ def index_to_m_y(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def split_data(data: pd.DataFrame) -> (pd.DataFrame, pd.DataFrame):
-    test = data.loc['2019']
-    train = data.drop(index='2019')
+    test = data.loc[['2018', '2019']]
+    train = data.drop(index=['2018', '2019'])
 
     return train, test
