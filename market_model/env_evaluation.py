@@ -12,7 +12,7 @@ from functions import create_val_dir, create_dict
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEBUG = True             # True if in debug mode
 num_samples = 100
-env_type = 'Env'       # EnvAlt or Env
+env_type = 'EnvAlt'       # EnvAlt or Env
 
 # constant model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
@@ -40,7 +40,7 @@ else:
     raise ValueError('environment must be defined')
 
 # RL parameters
-LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
+LENGTH_EPISODE = 11                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
 NUM_EPISODES = 10                     # 78 corresponds to 6 years for agg_weeks=4
 LEARNING_RATE = 0.001
 BATCH_SIZE = NUM_EPISODES
@@ -113,6 +113,8 @@ for sample_step in range(num_samples):
     batch_states = {'FSC':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
                     'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
                     'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
+    batch_rewards = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1]),
+                     'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1])}
     support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
                     'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
     batch_count = 0
@@ -126,7 +128,7 @@ for sample_step in range(num_samples):
         states = {'FSC':   np.empty([LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
                   'Shell': np.empty([LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
                   'Gov':   np.empty([LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
-        rewards = {'FSC': [], 'Shell': []}
+        rewards = {'FSC': np.empty([LENGTH_EPISODE, 1]), 'Shell': np.empty([LENGTH_EPISODE, 1])}
         actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
         step_actions = {}
         done = False
@@ -137,12 +139,12 @@ for sample_step in range(num_samples):
             # get action from each agent and store it
             for key in ACT_AGT:
                 if env_type == 'Env':
-                    step_actions = {'FSC': {'Shell': 0,  # random.choice(ACTION_SPACE)
+                    step_actions = {'FSC': {'Shell': 0,
                                             'Gov': 0},
                                     'Shell': {'FSC': 0}}
                 elif env_type == 'EnvAlt':
-                    step_actions = {'FSC': {'All': 0},
-                                    'Shell': {'FSC': 0}}
+                    step_actions = {'FSC': {'All': random.choice(ACTION_SPACE)},
+                                    'Shell': {'FSC': random.choice(ACTION_SPACE)}}
                 for par_agt in actions[key].keys():
                     actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
 
@@ -153,7 +155,7 @@ for sample_step in range(num_samples):
 
             # store rewards
             for agt in ACT_AGT:
-                rewards[agt].append(r1[agt])
+                rewards[agt][step_count] = r1[agt]
 
             # update old state and save current state
             for key in AGENTS:
@@ -168,6 +170,7 @@ for sample_step in range(num_samples):
                 for agt in AGENTS:
                     batch_states[agt][batch_count] = states[agt]
                     if agt != 'Gov':
+                        batch_rewards[agt][batch_count] = rewards[agt]
                         for par_agt in actions[agt].keys():
                             batch_actions[agt][par_agt].extend(actions[agt][par_agt])
 
@@ -175,6 +178,7 @@ for sample_step in range(num_samples):
                 # if batch is full, save batch data and empty it
                 if batch_count == BATCH_SIZE:
                     batch_count = 0
+                    torch.save(batch_rewards, (sample_dir / 'rewards'))
                     torch.save(batch_states, (sample_dir / 'batch_states'))
                     torch.save(batch_actions, (sample_dir / 'batch_actions'))
                     torch.save(support_calc, (sample_dir / 'support_calc'))
@@ -183,6 +187,8 @@ for sample_step in range(num_samples):
                     batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
                                     'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
                                     'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
+                    batch_rewards = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1]),
+                                     'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1])}
                     support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
                                     'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
 

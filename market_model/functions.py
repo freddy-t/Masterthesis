@@ -16,13 +16,13 @@ def discount_rewards(rewards, gamma):
     return r
 
 
-def create_dir(debug_flag, n_ep, l_ep, lr, env):
+def create_dir(debug_flag, n_ep, l_ep, lr, env_type):
     # function creates directory to store data of the training/testing
-    dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env)
+    dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type)
 
     # create directory for debugging purposes by deleting or just creating it
     if debug_flag:
-        bug_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env + '_debug')
+        bug_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type + '_debug')
         if not bug_path.is_dir():
             os.mkdir(bug_path)
         else:
@@ -45,13 +45,13 @@ def create_dir(debug_flag, n_ep, l_ep, lr, env):
     return save_dir
 
 
-def create_val_dir(debug_flag, env):
+def create_val_dir(debug_flag, env_type):
     # function creates directory to store data of the training/testing
-    dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env + '_val')
+    dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type + '_val')
 
     # create directory for debugging purposes by deleting or just creating it
     if debug_flag:
-        bug_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env + '_val_debug')
+        bug_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type + '_val_debug')
         if not bug_path.is_dir():
             os.mkdir(bug_path)
         else:

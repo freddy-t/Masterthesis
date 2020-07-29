@@ -309,15 +309,16 @@ class FSCNetworkEnvAlternative(object):
         self._current_step = None
         self.reward_shell_split = None
 
-    def calc_reward(self, obs) -> Dict[str, float]:
+    def calc_reward(self, obs, orig_sup) -> Dict[str, float]:
         resource = self._resource
         sub_lvl = self._sub_lvl
         step = self._current_step
         sd_data = self._shared_data
         sl_data = self._shell_data
 
-        # calculate reward for FSC, subtract support of FSC as it is not changing
-        r = {'FSC': np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum()}
+        # calculate reward for FSC
+        r = {'FSC': np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() -
+                    np.array([0 if key == 'FSC' else orig_sup[key][0] for key in orig_sup.keys()]).sum()}
 
         # calculate reward for Shell
         own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
@@ -474,7 +475,7 @@ class FSCNetworkEnvAlternative(object):
 
         # extract support and resource assignment for agent as array
         observation = self.get_state(support, resource, states)
-        reward = self.calc_reward(observation)
+        reward = self.calc_reward(observation, orig_support)
 
         # update step and check if finished
         self._current_step += 1
@@ -572,7 +573,7 @@ class FSCNetworkEnvAlternative(object):
 
         # extract support and resource assignment for agent as array
         observation = self.get_state(support, resource, states)
-        reward = self.calc_reward(observation)
+        reward = self.calc_reward(observation, orig_support)
 
         # update step and check if finished
         self._current_step += 1

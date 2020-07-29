@@ -119,6 +119,8 @@ batch_states = {'FSC':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FS
                 'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
 support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
                 'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
+batch_rewards = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1]),
+                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1])}
 reward_shell_calc = np.empty([BATCH_SIZE, LENGTH_EPISODE, 4])
 batch_count = 0
 optim_count = 0
@@ -134,7 +136,7 @@ while ep < NUM_EPISODES:
     states = {'FSC':   np.empty([LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
               'Shell': np.empty([LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
               'Gov':   np.empty([LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
-    rewards = {'FSC': [], 'Shell': []}
+    rewards = {'FSC': np.empty([LENGTH_EPISODE, 1]), 'Shell': np.empty([LENGTH_EPISODE, 1])}
     actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
     step_actions = {}
     done = False
@@ -159,7 +161,7 @@ while ep < NUM_EPISODES:
 
         # store rewards
         for agt in ACT_AGT:
-            rewards[agt].append(r1[agt])
+            rewards[agt][step_count] = r1[agt]
 
         # update old state and save current state
         for key in AGENTS:
@@ -174,6 +176,7 @@ while ep < NUM_EPISODES:
             for agt in AGENTS:
                 batch_states[agt][batch_count] = states[agt]
                 if agt != 'Gov':
+                    batch_rewards[agt][batch_count] = rewards[agt]
                     batch_returns[agt].extend(discount_rewards(rewards[agt], GAMMA))
                     for par_agt in actions[agt].keys():
                         batch_actions[agt][par_agt].extend(actions[agt][par_agt])
@@ -235,6 +238,7 @@ while ep < NUM_EPISODES:
                 # save agents, all states and rewards after SAVE_INTERVAL number of optimization steps
                 if optim_count % SAVE_INTERVAL == 0 or optim_count == 1:
                     torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep)))
+                    torch.save(batch_rewards, (SAVE_DIR / 'rewards_optim{}_ep{}'.format(optim_count, ep)))
                     torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
                     torch.save(batch_states, (SAVE_DIR / 'batch_states_optim{}'.format(optim_count)))
                     if save_calc:
@@ -247,6 +251,8 @@ while ep < NUM_EPISODES:
                 batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
                                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
                                 'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
+                batch_rewards = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1]),
+                                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1])}
                 batch_count = 0
                 if save_calc:
                     support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
