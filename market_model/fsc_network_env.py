@@ -143,7 +143,8 @@ class FSCNetworkEnv(object):
                             factor = -support_factor[par_agt]
                         else:
                             factor = 0
-                        add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
+                        add_val += factor * orig_support.loc['support', par_agt] * \
+                                   (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
 
                 # change in support is based on previous support --> copy is used
                 # check that support remains between 0 and 1
@@ -217,9 +218,10 @@ class FSCNetworkEnv(object):
                             factor = -support_factor[par_agt]
                         else:
                             factor = 0
-                        sup_calc[agt].append(factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2)
-                        add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
-
+                        sup_calc[agt].append(factor * orig_support.loc['support', par_agt] * \
+                                             (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2)
+                        add_val += factor * orig_support.loc['support', par_agt] * \
+                                   (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
                 # change in support is based on previous support --> copy is used
                 # check that support remains between 0 and 1
                 new_val = orig_support.loc['support', agt] + add_val
@@ -317,8 +319,17 @@ class FSCNetworkEnvAlternative(object):
         sl_data = self._shell_data
 
         # calculate reward for FSC
-        r = {'FSC': np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() -
-                    np.array([0 if key == 'FSC' else orig_sup[key][0] for key in orig_sup.keys()]).sum()}
+        # reward is difference of previous support
+        # r = {'FSC': np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() -
+        #             np.array([0 if key == 'FSC' else orig_sup[key][0] for key in orig_sup.keys()]).sum()}
+        # reward is based on previous support
+        diff = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() - \
+               np.array([0 if key == 'FSC' else orig_sup[key][0] for key in orig_sup.keys()]).sum()
+        epsilon = 10**-6
+        if epsilon < diff:
+            r = {'FSC': 1}
+        else:
+            r = {'FSC': -1}
 
         # calculate reward for Shell
         own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
@@ -404,12 +415,13 @@ class FSCNetworkEnvAlternative(object):
         # perform actions of FSC
         if actions['FSC']['All'] == 0:
             states['FSC'][1] += self._delta_research
-
+            # set influence of FSC to zero
+            for n, key in enumerate(keys):
+                states['FSC'][n+2] = 0
         elif actions['FSC']['All'] == 1:
             for n, key in enumerate(keys):
                 states['FSC'][n+2] = states['FSC'][1] * self._base_impacts[key][0]
             states['FSC'][1] = 0
-
         elif actions['FSC']['All'] == 2:
             for n, key in enumerate(keys):
                 states['FSC'][n+2] = states['FSC'][1] * self._base_impacts[key][1]
@@ -431,7 +443,8 @@ class FSCNetworkEnvAlternative(object):
                         factor = -support_factor[par_agt]
                     else:
                         factor = 0
-                    add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
+                    add_val += factor * orig_support.loc['support', par_agt] * \
+                               (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
 
             # influence of support by FSC
             add_val += resource.loc[agt, 'FSC'] * states['FSC'][n+2]
@@ -498,12 +511,13 @@ class FSCNetworkEnvAlternative(object):
         # perform actions of FSC
         if actions['FSC']['All'] == 0:
             states['FSC'][1] += self._delta_research
-
+            # set influence of FSC to zero
+            for n, key in enumerate(keys):
+                states['FSC'][n+2] = 0
         elif actions['FSC']['All'] == 1:
             for n, key in enumerate(keys):
                 states['FSC'][n+2] = states['FSC'][1] * self._base_impacts[key][0]
             states['FSC'][1] = 0
-
         elif actions['FSC']['All'] == 2:
             for n, key in enumerate(keys):
                 states['FSC'][n+2] = states['FSC'][1] * self._base_impacts[key][1]
@@ -526,8 +540,10 @@ class FSCNetworkEnvAlternative(object):
                         factor = -support_factor[par_agt]
                     else:
                         factor = 0
-                    sup_calc[agt].append(factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2)
-                    add_val += factor * (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
+                    sup_calc[agt].append(factor * orig_support.loc['support', par_agt] *
+                                         (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2)
+                    add_val += factor * orig_support.loc['support', par_agt] * \
+                               (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
 
             # influence of support by FSC
             sup_calc[agt].append(resource.loc[agt, 'FSC'] * states['FSC'][n+2])

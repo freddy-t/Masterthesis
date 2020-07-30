@@ -13,11 +13,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DEBUG = True                 # True if in debug mode
-save_calc = True             # True if support and resource calculations should be saved
+DEBUG = False                 # True if in debug mode
+save_calc = False             # True if support and resource calculations should be saved
 store_graph = False          # True if computational graph of network should be saved
 MODE = 'train'               # 'train' for training mode, otherwise testing data is used
-env_type = 'Env'           # EnvAlt or Env
+env_type = 'EnvAlt'           # EnvAlt or Env
 
 # model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
@@ -53,8 +53,8 @@ BASE_IMPACTS = {'Shell': [0.6, 0.5],     # impact according to action 2 and 3 on
                 'Gov':   [0.2, 0.7]}
 
 # RL parameters
-LENGTH_EPISODE = 5                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
-NUM_EPISODES = 1000
+LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
+NUM_EPISODES = 10
 LEARNING_RATE = 0.001
 BATCH_SIZE = 10
 GAMMA = 0.99

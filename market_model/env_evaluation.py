@@ -11,7 +11,7 @@ from functions import create_val_dir, create_dict
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEBUG = True             # True if in debug mode
-num_samples = 100
+num_samples = 1
 env_type = 'EnvAlt'       # EnvAlt or Env
 
 # constant model parameters
@@ -40,8 +40,8 @@ else:
     raise ValueError('environment must be defined')
 
 # RL parameters
-LENGTH_EPISODE = 11                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
-NUM_EPISODES = 10                     # 78 corresponds to 6 years for agg_weeks=4
+LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
+NUM_EPISODES = 1                     # 78 corresponds to 6 years for agg_weeks=4
 LEARNING_RATE = 0.001
 BATCH_SIZE = NUM_EPISODES
 GAMMA = 0.99
@@ -137,14 +137,14 @@ for sample_step in range(num_samples):
         while not done:
 
             # get action from each agent and store it
+            if env_type == 'Env':
+                step_actions = {'FSC': {'Shell': 0,
+                                        'Gov': 0},
+                                'Shell': {'FSC': 0}}
+            elif env_type == 'EnvAlt':
+                step_actions = {'FSC': {'All': copy.copy(random.choice(ACTION_SPACE))},
+                                'Shell': {'FSC': copy.copy(random.choice(ACTION_SPACE))}}
             for key in ACT_AGT:
-                if env_type == 'Env':
-                    step_actions = {'FSC': {'Shell': 0,
-                                            'Gov': 0},
-                                    'Shell': {'FSC': 0}}
-                elif env_type == 'EnvAlt':
-                    step_actions = {'FSC': {'All': random.choice(ACTION_SPACE)},
-                                    'Shell': {'FSC': random.choice(ACTION_SPACE)}}
                 for par_agt in actions[key].keys():
                     actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
 
