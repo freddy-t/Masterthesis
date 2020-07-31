@@ -51,7 +51,7 @@ SAVE_INTERVAL = 100                        # numbers of updates until data/model
 factor = 1000
 range_delta_resource = np.array([0.001, 0.02]) * factor
 range_delta_research = np.array([0.001, 0.1]) * factor
-range_betas = np.array([0.001, 0.1]) * factor
+# range_betas = np.array([0.001, 0.1]) * factor
 range_sub_lvl = np.array([0, 0.1]) * factor
 
 SAVE_DIR = create_val_dir(DEBUG, env_type)
@@ -70,7 +70,7 @@ for sample_step in range(num_samples):
 
     # sample evaluation parameters
     delta_resource = random.randrange(range_delta_resource[0], range_delta_resource[1]+1) / factor
-    beta_j = random.randrange(range_betas[0], range_betas[1]+1) / factor
+    beta_j = 1 #random.randrange(range_betas[0], range_betas[1]+1) / factor
     # beta_fsc = random.randrange(range_betas[0], range_betas[1]+1) / factor
     betas = {'FSC': beta_j,
              'Shell': beta_j,
@@ -149,7 +149,7 @@ for sample_step in range(num_samples):
                     actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
 
             # perform action on environment
-            state_1, r1, done, sup_calc, r_shell = env.step_calc(step_actions)
+            state_1, r1, done, sup_calc, _ = env.step_calc(step_actions)
             for key in support_calc.keys():
                 support_calc[key][batch_count][step_count] = sup_calc[key]
 

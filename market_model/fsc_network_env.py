@@ -311,7 +311,7 @@ class FSCNetworkEnvAlternative(object):
         self._current_step = None
         self.reward_shell_split = None
 
-    def calc_reward(self, obs, orig_sup) -> Dict[str, float]:
+    def calc_reward(self, obs, orig_sup, orig_res, r_shares) -> Dict[str, float]:
         resource = self._resource
         sub_lvl = self._sub_lvl
         step = self._current_step
@@ -322,26 +322,50 @@ class FSCNetworkEnvAlternative(object):
         # reward is difference of previous support
         # r = {'FSC': np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() -
         #             np.array([0 if key == 'FSC' else orig_sup[key][0] for key in orig_sup.keys()]).sum()}
+        # print('reward diff: {}'.format(r['FSC']))
         # reward is based on previous support
-        diff = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() - \
-               np.array([0 if key == 'FSC' else orig_sup[key][0] for key in orig_sup.keys()]).sum()
-        epsilon = 10**-6
-        if epsilon < diff:
-            r = {'FSC': 1}
-        else:
-            r = {'FSC': -1}
-
+        # diff = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() - \
+        #        np.array([0 if key == 'FSC' else orig_sup[key][0] for key in orig_sup.keys()]).sum()
+        # epsilon = 10**-6
+        # if epsilon < diff:
+        #     r = {'FSC': 1}
+        # else:
+        #     r = {'FSC': -1}
+        # reward is based on difference for each agent which is caused by FSC only
+        # first entry of r_shares is change due to partner (network effect) and second entry due to fsc influence
+        r_fsc = 0
+        for key in r_shares.keys():
+            r_fsc += r_shares[key][1] - np.abs(r_shares[key][0])
+        # print(r_shares)
+        # print('reward V2.1: {}'.format(r_fsc))
+        r = {'FSC': r_fsc}
         # calculate reward for Shell
-        own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
-                      sd_data.iloc[step]['CO2_price']) / sl_data.iloc[step]['TotCap_USD']
-        r_shell =\
-            resource['Shell']['Shell'] * own_return + sub_lvl * resource.loc['Shell', 'FSC']\
-            + sub_lvl * self._support.loc['support', 'Shell'] * resource['Shell']['Shell']
+        # old version
+        # own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
+        #               sd_data.iloc[step]['CO2_price']) / sl_data.iloc[step]['TotCap_USD']
+        # r_shell= \
+        #         resource['Shell']['Shell'] * own_return + sub_lvl * resource.loc['Shell', 'FSC'] \
+        #         + sub_lvl * self._support.loc['support', 'Shell'] * resource['Shell']['Shell']
+        if step == 0:
+            r_shell = 0
+        else:
+            own_return_t = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
+                            sd_data.iloc[step]['CO2_price']) / sl_data.iloc[step]['TotCap_USD']
+            own_return_t_1 = (sl_data.iloc[step-1]['NIAT_USD'] - sl_data.iloc[step-1]['CO2_emission_tons'] *
+                              sd_data.iloc[step-1]['CO2_price']) / sl_data.iloc[step-1]['TotCap_USD']
+            profit_t =\
+                      resource['Shell']['Shell'] * own_return_t + sub_lvl * resource.loc['Shell', 'FSC']\
+                      + sub_lvl * self._support.loc['support', 'Shell'] * resource['Shell']['Shell']
+            profit_t_1 = \
+                        orig_res['Shell']['Shell'] * own_return_t_1 + sub_lvl * orig_res.loc['Shell', 'FSC'] \
+                        + sub_lvl * orig_sup.loc['support', 'Shell'] * orig_res['Shell']['Shell']
+            r_shell = profit_t - profit_t_1
         r.update({'Shell': r_shell})
 
-        self.reward_shell_split = np.array([r_shell, resource['Shell']['Shell'] * own_return,
-                                            sub_lvl * resource.loc['Shell', 'FSC'],
-                                            sub_lvl * self._support.loc['support', 'Shell']*resource['Shell']['Shell']])
+        # self.reward_shell_split = np.array([r_shell, resource['Shell']['Shell'] * own_return,
+        #                                     sub_lvl * resource.loc['Shell', 'FSC'],
+        #                                     sub_lvl * self._support.loc['support', 'Shell']*resource['Shell']['Shell']])
+
         return r
 
     def check_if_done(self) -> bool:
@@ -403,6 +427,8 @@ class FSCNetworkEnvAlternative(object):
         self._shared_data = sd.iloc[start:start + ep_len]
 
     def step(self, actions) -> (Dict[str, np.ndarray], Dict[str, float], bool):
+        # TODO: komplett auf nehe methodik umstellen --> step_calc kopieren und unnötiges rauslöschen
+        raise ValueError('s. TODO')
         support_factor = self._support_factor
         # the following variable assignment leads to a direct update of the private variables, as no copy is passed
         support = self._support
@@ -526,6 +552,7 @@ class FSCNetworkEnvAlternative(object):
             raise ValueError('Action for FSC is not defined: env.step()')
 
         # set the support based on the previous resource assignment -> Therefore, it is the first calculation.
+        r_shares_fsc = {'Shell': [], 'Gov': []}
         orig_support = copy.copy(support)
         for n, agt in enumerate(keys):
             add_val = 0
@@ -533,21 +560,20 @@ class FSCNetworkEnvAlternative(object):
             for par_agt in keys:
                 # agents do not influence themselves
                 if agt != par_agt:
-                    # change to partner agent is only initiated, support is different
-                    if orig_support.loc['support', agt] < orig_support.loc['support', par_agt]:
-                        factor = support_factor[par_agt]
-                    elif orig_support.loc['support', agt] > orig_support.loc['support', par_agt]:
-                        factor = -support_factor[par_agt]
-                    else:
-                        factor = 0
-                    sup_calc[agt].append(factor * orig_support.loc['support', par_agt] *
-                                         (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2)
-                    add_val += factor * orig_support.loc['support', par_agt] * \
-                               (resource.loc[agt, par_agt] + resource.loc[par_agt, agt]) / 2
+                    # calculate change due to impact of partner agent
+                    #TODO: support_factor rausnehmen
+                    val_par = support_factor[par_agt] * resource.loc[agt, par_agt] \
+                              * (orig_support.loc['support', par_agt] - orig_support.loc['support', agt])
+                    sup_calc[agt].append(val_par)
+                    r_shares_fsc[agt].append(val_par)
+                    add_val += val_par
 
-            # influence of support by FSC
-            sup_calc[agt].append(resource.loc[agt, 'FSC'] * states['FSC'][n+2])
-            add_val += resource.loc[agt, 'FSC'] * states['FSC'][n+2]
+            # calculate change of support due to influence of FSC
+            val_fsc = resource.loc[agt, 'FSC'] * states['FSC'][n+2]
+            sup_calc[agt].append(val_fsc)
+            r_shares_fsc[agt].append(val_fsc)
+            add_val += val_fsc
+
             # change in support is based on previous support --> copy is used
             # check that support remains between 0 and 1
             new_val = orig_support.loc['support', agt] + add_val
@@ -566,9 +592,9 @@ class FSCNetworkEnvAlternative(object):
         for act_agt in keys:
             for part_agt in actions[act_agt].keys():
                 # update value for resource assignment if it is between 0 and 1
-                val = resource.loc[act_agt, part_agt] + delta_resource * (actions[act_agt][part_agt] - 1)
-                if (0.0 <= val) and (val <= 1.0):
-                    resource.loc[act_agt, part_agt] = val
+                val_par_ = resource.loc[act_agt, part_agt] + delta_resource * (actions[act_agt][part_agt] - 1)
+                if (0.0 <= val_par_) and (val_par_ <= 1.0):
+                    resource.loc[act_agt, part_agt] = val_par_
 
             # set the resource assignment of the agent to itself
             # as a result of the resource assignment to the other agents
@@ -589,7 +615,7 @@ class FSCNetworkEnvAlternative(object):
 
         # extract support and resource assignment for agent as array
         observation = self.get_state(support, resource, states)
-        reward = self.calc_reward(observation, orig_support)
+        reward = self.calc_reward(observation, orig_support, orig_resource, r_shares_fsc)
 
         # update step and check if finished
         self._current_step += 1
