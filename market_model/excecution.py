@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DEBUG = False                 # True if in debug mode
+DEBUG = True                 # True if in debug mode
 save_calc = False             # True if support and resource calculations should be saved
 store_graph = False          # True if computational graph of network should be saved
 MODE = 'train'               # 'train' for training mode, otherwise testing data is used
@@ -40,17 +40,17 @@ else:
 # parameters to evaluate
 INIT_SUPPORT = [[1, 0.1, 0.1]]           # initial support by the agents, must be in order as in AGENTS
                                          # initial resource assignment       #       FSC  Shell  Gov
-INIT_RESOURCE = [[0.95,   0.05, 0.00],                                       # FSC
-                 [0.025,  0.95, 0.025],                                      # Shell
-                 [0.05,   0.10, 0.85]]                                       # Gov
+#INIT_RESOURCE = [[0.95,   0.05, 0.00],                                       # FSC
+INIT_RESOURCE = [[0.025,  0.95, 0.025],                                      # Shell
+                 [0.05,   0.05, 0.90]]                                       # Gov
 SUB_LVL = 0.05                           # level of subsidy
 DELTA_RESOURCE = 0.005                   # factor by which resource assignment is changed due to action
-BETAS = {'FSC': 0.001,                   # factor influences how fast support is changed due to interaction
-         'Shell': 0.001,
-         'Gov': 0.001}
+BETAS = {'FSC': 1,                   # factor influences how fast support is changed due to interaction
+         'Shell': 1,
+         'Gov': 1}
 DELTA_RESEARCH = 0.1                     # factor by which research is changed due to action of FSC
-BASE_IMPACTS = {'Shell': [0.6, 0.5],     # impact according to action 2 and 3 on agent
-                'Gov':   [0.2, 0.7]}
+BASE_IMPACTS = {'Shell': [0.19, 0.09],     # impact according to action 2 and 3 on agent
+                'Gov':   [0.05, 0.18]}
 
 # RL parameters
 LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
@@ -108,7 +108,7 @@ if device == 'cuda':
 optimizers, all_agents = init_agents(ACTION_SPACE, N_STATE_SPACE, REQUIRED_NEURAL_NETS, ACT_AGT, LEARNING_RATE, device)
 
 # save initial agents
-torch.save(all_agents, (SAVE_DIR / 'agents_init'))
+torch.save(all_agents, (SAVE_DIR / 'agents_init'), _use_new_zipfile_serialization=False)
 
 # initialise loop variables
 total_rewards = {'FSC': [], 'Shell': []}
@@ -237,13 +237,18 @@ while ep < NUM_EPISODES:
 
                 # save agents, all states and rewards after SAVE_INTERVAL number of optimization steps
                 if optim_count % SAVE_INTERVAL == 0 or optim_count == 1:
-                    torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep)))
-                    torch.save(batch_rewards, (SAVE_DIR / 'rewards_optim{}_ep{}'.format(optim_count, ep)))
-                    torch.save(total_rewards, (SAVE_DIR / 'tot_r'))
-                    torch.save(batch_states, (SAVE_DIR / 'batch_states_optim{}'.format(optim_count)))
+                    torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep)),
+                               _use_new_zipfile_serialization=False)
+                    torch.save(batch_rewards, (SAVE_DIR / 'rewards_optim{}_ep{}'.format(optim_count, ep)),
+                               _use_new_zipfile_serialization=False)
+                    torch.save(total_rewards, (SAVE_DIR / 'tot_r'), _use_new_zipfile_serialization=False)
+                    torch.save(batch_states, (SAVE_DIR / 'batch_states_optim{}'.format(optim_count)),
+                               _use_new_zipfile_serialization=False)
                     if save_calc:
-                        torch.save(support_calc, (SAVE_DIR / 'support_calc_optim{}'.format(optim_count)))
-                        torch.save(reward_shell_calc, (SAVE_DIR / 'reward_shell_calc_optim{}'.format(optim_count)))
+                        torch.save(support_calc, (SAVE_DIR / 'support_calc_optim{}'.format(optim_count)),
+                                   _use_new_zipfile_serialization=False)
+                        torch.save(reward_shell_calc, (SAVE_DIR / 'reward_shell_calc_optim{}'.format(optim_count)),
+                                   _use_new_zipfile_serialization=False)
 
                 # empty batch
                 batch_returns = {'FSC': [], 'Shell': []}
@@ -262,7 +267,7 @@ while ep < NUM_EPISODES:
 
     # take time and save it
     times.append(time.time() - start_time)
-    torch.save(times, (SAVE_DIR / 'running_times'))
+    torch.save(times, (SAVE_DIR / 'running_times'), _use_new_zipfile_serialization=False)
 
     # Print moving average
     if ep % 10 == 0:

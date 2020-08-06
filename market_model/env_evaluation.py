@@ -11,7 +11,7 @@ from functions import create_val_dir, create_dict
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEBUG = True             # True if in debug mode
-num_samples = 1
+num_samples = 100
 env_type = 'EnvAlt'       # EnvAlt or Env
 
 # constant model parameters
@@ -23,11 +23,11 @@ N_STATE_SPACE = {'FSC': 4,
                  'Gov': 4}
 INIT_SUPPORT = [[1, 0.1, 0.1]]           # initial support by the agents, must be in order as in AGENTS
                                          # initial resource assignment       #       FSC  Shell  Gov
-INIT_RESOURCE = [[0.95,   0.05, 0.00],                                       # FSC
-                 [0.025,  0.95, 0.025],                                      # Shell
-                 [0.05,   0.10, 0.85]]                                       # Gov
-BASE_IMPACTS = {'Shell': [0.4, 0.2],     # impact according to action 2 and 3 on agent
-                'Gov':   [0.2, 0.4]}
+#INIT_RESOURCE = [[0.95,   0.05, 0.00],                                       # FSC
+INIT_RESOURCE = [[0.025,  0.95, 0.025],                                      # Shell
+                 [0.05,   0.05, 0.90]]                                       # Gov
+BASE_IMPACTS = {'Shell': [0.19, 0.09],     # impact according to action 2 and 3 on agent
+                'Gov':   [0.05, 0.18]}
 if env_type == 'Env':                                # defines, which neural nets must be defined
     REQUIRED_NEURAL_NETS = {'FSC':   ['Shell', 'Gov'],
                             'Shell': ['FSC'],
@@ -41,7 +41,7 @@ else:
 
 # RL parameters
 LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
-NUM_EPISODES = 1                     # 78 corresponds to 6 years for agg_weeks=4
+NUM_EPISODES = 10                     # 78 corresponds to 6 years for agg_weeks=4
 LEARNING_RATE = 0.001
 BATCH_SIZE = NUM_EPISODES
 GAMMA = 0.99
@@ -97,7 +97,7 @@ for sample_step in range(num_samples):
     # create saving directory and save config
     sample_dir = SAVE_DIR / ('sample_no' + str(sample_step))
     os.mkdir(sample_dir)
-    torch.save(CONFIG, (sample_dir / 'config'))
+    torch.save(CONFIG, (sample_dir / 'config'), _use_new_zipfile_serialization=False)
     with open((sample_dir / 'config.txt'), 'w') as file:
         for key in CONFIG.keys():
             file.write(str(key) + ': ' + str(CONFIG[key]) + '\n')
@@ -178,10 +178,10 @@ for sample_step in range(num_samples):
                 # if batch is full, save batch data and empty it
                 if batch_count == BATCH_SIZE:
                     batch_count = 0
-                    torch.save(batch_rewards, (sample_dir / 'rewards'))
-                    torch.save(batch_states, (sample_dir / 'batch_states'))
-                    torch.save(batch_actions, (sample_dir / 'batch_actions'))
-                    torch.save(support_calc, (sample_dir / 'support_calc'))
+                    torch.save(batch_rewards, (sample_dir / 'rewards'), _use_new_zipfile_serialization=False)
+                    torch.save(batch_states, (sample_dir / 'batch_states'), _use_new_zipfile_serialization=False)
+                    torch.save(batch_actions, (sample_dir / 'batch_actions'), _use_new_zipfile_serialization=False)
+                    torch.save(support_calc, (sample_dir / 'support_calc'), _use_new_zipfile_serialization=False)
 
                     batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
                     batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
@@ -194,7 +194,7 @@ for sample_step in range(num_samples):
 
     # take time and save it
     times.append(time.time() - start_time)
-    torch.save(times, (sample_dir / 'running_times'))
+    torch.save(times, (sample_dir / 'running_times'), _use_new_zipfile_serialization=False)
 
     # Print moving average
     print('Sample {} complete. Avg time of last 10: {:.3f} sec.'.format(sample_step, np.mean(times[-10:])))
