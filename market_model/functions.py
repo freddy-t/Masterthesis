@@ -16,7 +16,7 @@ def discount_rewards(rewards, gamma):
     return r
 
 
-def create_dir(debug_flag, n_ep, l_ep, lr, env_type):
+def create_dir(debug_flag, n_ep, l_ep, lr, env_type='EnvAlt'):
     # function creates directory to store data of the training/testing
     dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type)
 
@@ -45,7 +45,7 @@ def create_dir(debug_flag, n_ep, l_ep, lr, env_type):
     return save_dir
 
 
-def create_val_dir(debug_flag, env_type):
+def create_val_dir(debug_flag, env_type='EnvAlt'):
     # function creates directory to store data of the training/testing
     dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type + '_val')
 

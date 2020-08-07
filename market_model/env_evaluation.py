@@ -5,39 +5,30 @@ import os
 import random
 import numpy as np
 from agents import init_agents
-from fsc_network_env import FSCNetworkEnv, FSCNetworkEnvAlternative
+from fsc_network_env import FSCNetworkEnvAlternative
 from functions import create_val_dir, create_dict
 
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEBUG = True             # True if in debug mode
 num_samples = 100
-env_type = 'EnvAlt'       # EnvAlt or Env
 
 # constant model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
-ACT_AGT = ['FSC', 'Shell']               # set the active agents
-ACTION_SPACE = [0, 1, 2]                # action definition: 0 = decrease, 1 = maintain, 2 = increase
+ACT_AGT = ['FSC', 'Shell']                          # set the active agents
+ACTION_SPACE = [0, 1, 2]                            # action definition: 0 = decrease, 1 = maintain, 2 = increase
 N_STATE_SPACE = {'FSC': 4,
                  'Shell': 4,
                  'Gov': 4}
-INIT_SUPPORT = [[1, 0.1, 0.1]]           # initial support by the agents, must be in order as in AGENTS
-                                         # initial resource assignment       #       FSC  Shell  Gov
-#INIT_RESOURCE = [[0.95,   0.05, 0.00],                                       # FSC
-INIT_RESOURCE = [[0.025,  0.95, 0.025],                                      # Shell
-                 [0.05,   0.05, 0.90]]                                       # Gov
-BASE_IMPACTS = {'Shell': [0.19, 0.09],     # impact according to action 2 and 3 on agent
-                'Gov':   [0.05, 0.18]}
-if env_type == 'Env':                                # defines, which neural nets must be defined
-    REQUIRED_NEURAL_NETS = {'FSC':   ['Shell', 'Gov'],
-                            'Shell': ['FSC'],
-                            'Gov':   []}
-elif env_type == 'EnvAlt':
-    REQUIRED_NEURAL_NETS = {'FSC':   ['All'],
-                            'Shell': ['FSC'],
-                            'Gov':   []}
-else:
-    raise ValueError('environment must be defined')
+INIT_SUPPORT = [1, 0.1, 0.1]                        # initial support by the agents, must be in order (FSC, Shell, Gov)
+INIT_RESOURCE = {'Shell': [0.025,  0.95, 0.025],    # initial resource assignment  FSC  Shell  Gov
+                 'Gov':   [0.05,   0.05, 0.90]}
+BASE_IMPACTS = {'Shell': [0.38, 0.11],              # impact according to action 2 and 3 on agent
+                'Gov':   [0.03, 0.33]}
+
+REQUIRED_NEURAL_NETS = {'FSC':   ['All'],
+                        'Shell': ['FSC', 'Gov'],
+                        'Gov':   []}
 
 # RL parameters
 LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
@@ -52,37 +43,29 @@ factor = 1000
 range_delta_resource = np.array([0.001, 0.02]) * factor
 range_delta_research = np.array([0.001, 0.1]) * factor
 # range_betas = np.array([0.001, 0.1]) * factor
-range_sub_lvl = np.array([0, 0.1]) * factor
 
-SAVE_DIR = create_val_dir(DEBUG, env_type)
+SAVE_DIR = create_val_dir(DEBUG)
 
 # non constant parameters are passed as None
-if env_type == 'Env':
-    env = FSCNetworkEnv(agt=AGENTS, init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, sub_lvl=None, ep_len=LENGTH_EPISODE,
-                        delta_res=None, sup_fac=None, n_state_space=N_STATE_SPACE, agg_weeks=4)
-elif env_type == 'EnvAlt':
-    env = FSCNetworkEnvAlternative(agt=AGENTS, init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, sub_lvl=None,
-                                   ep_len=LENGTH_EPISODE, delta_res=None, sup_fac=None, n_state_space=N_STATE_SPACE,
-                                   delta_search=None, base_impacts=BASE_IMPACTS, agg_weeks=4)
+env = FSCNetworkEnvAlternative(agt=AGENTS, init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, ep_len=LENGTH_EPISODE,
+                               delta_res=None, sup_fac=None, delta_search=None, n_state_space=N_STATE_SPACE,
+                               base_impacts=BASE_IMPACTS, agg_weeks=4, save_calc=True)
 times = []
 for sample_step in range(num_samples):
     start_time = time.time()
 
     # sample evaluation parameters
     delta_resource = random.randrange(range_delta_resource[0], range_delta_resource[1]+1) / factor
-    beta_j = 1 #random.randrange(range_betas[0], range_betas[1]+1) / factor
-    # beta_fsc = random.randrange(range_betas[0], range_betas[1]+1) / factor
+    beta_j = 1  # random.randrange(range_betas[0], range_betas[1]+1) / factor
     betas = {'FSC': beta_j,
              'Shell': beta_j,
              'Gov': beta_j}
     delta_research = random.randrange(range_delta_research[0], range_delta_research[1]+1) / factor
-    sub_lvl = random.randrange(range_sub_lvl[0], range_sub_lvl[1]+1) / factor
 
     CONFIG = {'agents': AGENTS,
               'active_agents': ACT_AGT,
               'init_support': INIT_SUPPORT,
               'init_resource': INIT_RESOURCE,
-              'sub_lvl': sub_lvl,
               'delta_resource': delta_resource,
               'delta_research': delta_research,
               'base_impacts': BASE_IMPACTS,
@@ -103,7 +86,7 @@ for sample_step in range(num_samples):
             file.write(str(key) + ': ' + str(CONFIG[key]) + '\n')
 
     # set missing parameters for environment - delta_research only used for EnvAlt
-    env.set(delta_res=delta_resource, sup_fac=betas, delta_search=delta_research, sub_lvl=sub_lvl)
+    env.set(delta_res=delta_resource, sup_fac=betas, delta_search=delta_research)
 
     # initialize agents and network optimizers and store them in dicts
     _, all_agents = init_agents(ACTION_SPACE, N_STATE_SPACE, REQUIRED_NEURAL_NETS, ACT_AGT, LEARNING_RATE, device)
@@ -120,6 +103,7 @@ for sample_step in range(num_samples):
     batch_count = 0
     step_count = 0
     ep = 0
+
     # loop over all episodes (= rollouts)
     while ep < NUM_EPISODES:
         ep += 1
@@ -137,19 +121,16 @@ for sample_step in range(num_samples):
         while not done:
 
             # get action from each agent and store it
-            if env_type == 'Env':
-                step_actions = {'FSC': {'Shell': 0,
-                                        'Gov': 0},
-                                'Shell': {'FSC': 0}}
-            elif env_type == 'EnvAlt':
-                step_actions = {'FSC': {'All': copy.copy(random.choice(ACTION_SPACE))},
-                                'Shell': {'FSC': copy.copy(random.choice(ACTION_SPACE))}}
+            step_actions = {'FSC':   {'All': random.choice(ACTION_SPACE)},
+                            'Shell': {'FSC': random.choice(ACTION_SPACE),
+                                      'Gov': random.choice(ACTION_SPACE)}}
+
             for key in ACT_AGT:
                 for par_agt in actions[key].keys():
                     actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
 
             # perform action on environment
-            state_1, r1, done, sup_calc, _ = env.step_calc(step_actions)
+            state_1, r1, done, sup_calc, _ = env.step(step_actions)
             for key in support_calc.keys():
                 support_calc[key][batch_count][step_count] = sup_calc[key]
 

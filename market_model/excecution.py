@@ -84,7 +84,7 @@ CONFIG = {'agents': AGENTS,
 # create saving directory and save config
 SAVE_DIR = create_dir(DEBUG, NUM_EPISODES, LENGTH_EPISODE, LEARNING_RATE, env_type)
 writer = SummaryWriter(SAVE_DIR)
-torch.save(CONFIG, (SAVE_DIR / 'config'))
+torch.save(CONFIG, (SAVE_DIR / 'config'), _use_new_zipfile_serialization=False)
 with open((SAVE_DIR / 'config.txt'), 'w') as file:
     for key in CONFIG.keys():
         file.write(str(key) + ': ' + str(CONFIG[key]) + '\n')
