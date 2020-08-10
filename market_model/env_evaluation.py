@@ -10,7 +10,7 @@ from functions import create_val_dir, create_dict
 
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DEBUG = True             # True if in debug mode
+DEBUG = False             # True if in debug mode
 num_samples = 100
 
 # constant model parameters
@@ -31,7 +31,7 @@ REQUIRED_NEURAL_NETS = {'FSC':   ['All'],
                         'Gov':   []}
 
 # RL parameters
-LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
+LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 104
 NUM_EPISODES = 10                     # 78 corresponds to 6 years for agg_weeks=4
 LEARNING_RATE = 0.001
 BATCH_SIZE = NUM_EPISODES
@@ -178,6 +178,7 @@ for sample_step in range(num_samples):
     torch.save(times, (sample_dir / 'running_times'), _use_new_zipfile_serialization=False)
 
     # Print moving average
-    print('Sample {} complete. Avg time of last 10: {:.3f} sec.'.format(sample_step, np.mean(times[-10:])))
+    if sample_step % 5 == 0:
+        print('Sample {} complete. Avg time of last 10 episodes: {:.3f} sec.'.format(sample_step, np.mean(times[-10:])))
 
 print('Total time for {} samples: {:.3f}'.format(sample_step+1, np.sum(times)))

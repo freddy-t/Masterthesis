@@ -16,7 +16,7 @@ class FSCNetworkEnvAlternative(object):
     def __init__(self, agt, init_sup, init_res, ep_len, delta_res, sup_fac, n_state_space,
                  delta_search, base_impacts, sub_max=0.1, mode='train', agg_weeks=4, save_calc=False):
         # setup environment parameters
-        shared, shell = load_data(agt, agg_weeks)
+        ext_data = load_data(agt, agg_weeks)
         self._episode_len = ep_len
         self._delta_resource = delta_res
         self._support_factor = sup_fac
@@ -28,22 +28,20 @@ class FSCNetworkEnvAlternative(object):
         self._save_calc = save_calc
 
         # split to train and test data
-        shared_train, shared_test = split_data(shared)
-        shell_train, shell_test = split_data(shell)
+        ext_train, ext_test = split_data(ext_data)
+
+        # make pre-calculation for shell reward, so that it is not done in the loop
         if mode == 'train':
-            self._shared_data_orig = shared_train
-            self._shell_data_orig = shell_train
+            self._own_return_orig = reward_pre_calc(ext_train)
         else:
-            self._shared_data_orig = shared_test
-            self._shell_data_orig = shell_test
+            self._own_return_orig = reward_pre_calc(ext_test)
 
         # store initial states
         self.__init_support = np.array(init_sup)
         self.__init_resource = init_res
 
         # create other variables and parameters
-        self._shared_data = None
-        self._shell_data = None
+        self._own_return = None
         self._states = dict()
         self._support = None
         self._resource = None
@@ -53,7 +51,7 @@ class FSCNetworkEnvAlternative(object):
 
     def check_if_done(self) -> bool:
         current_step = self._current_step
-        # minus one as the first step is performed with step=0, taking the iloc[0] of the data DataFrames
+
         if current_step == self._episode_len:
             return True
         else:
@@ -90,14 +88,14 @@ class FSCNetworkEnvAlternative(object):
     def reward(self, obs, prev_sup, prev_res, prev_sub_lvl, r_shares) -> Dict[str, float]:
         resource = self._resource
         step = self._current_step
-        sd_data = self._shared_data
-        sl_data = self._shell_data
+        own_return = self._own_return
         r = dict()
 
-        # calculate reward for FSC base on difference of previous support
+        # calculate reward for FSC
+        # V1.1: base on difference of previous support and current support
         r['FSC'] = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() - \
                    (np.array(prev_sup).sum() - 1)
-        # print('reward diff: {}'.format(r['FSC']))
+
         # reward is based on previous support
         # diff = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() - \
         #        np.array([0 if key == 'FSC' else orig_sup[key][0] for key in orig_sup.keys()]).sum()
@@ -115,33 +113,30 @@ class FSCNetworkEnvAlternative(object):
         #     r = {'FSC': 1}
         # else:
         #     r = {'FSC': -1}
-        # calculate reward for Shell based on profit at the current time step
-        # own_return = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
-        #               sd_data.iloc[step]['CO2_price']) / sl_data.iloc[step]['TotCap_USD']
-        # r_shell= \
-        #         resource['Shell']['Shell'] * own_return + sub_lvl * resource.loc['Shell', 'FSC'] \
-        #         + sub_lvl * self._support.loc['support', 'Shell'] * resource['Shell']['Shell']
-        # calculate reward for Shell based on profit of difference between current and previous time step
-        if step == 0:
-            r['Shell'] = 0
-        else:
-            sub_lvl = self._sub_lvl
-            own_return_t = (sl_data.iloc[step]['NIAT_USD'] - sl_data.iloc[step]['CO2_emission_tons'] *
-                            sd_data.iloc[step]['CO2_price']) / sl_data.iloc[step]['TotCap_USD']
-            own_return_t_1 = (sl_data.iloc[step-1]['NIAT_USD'] - sl_data.iloc[step-1]['CO2_emission_tons'] *
-                              sd_data.iloc[step-1]['CO2_price']) / sl_data.iloc[step-1]['TotCap_USD']
-            profit_t =\
-                      resource['Shell'][1] * own_return_t + sub_lvl * resource['Shell'][0]\
-                      + sub_lvl * self._support[1] * resource['Shell'][1]
-            profit_t_1 = \
-                        prev_res['Shell'][1] * own_return_t_1 + prev_sub_lvl * prev_res['Shell'][0] \
-                        + prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1]
-            r_shell = profit_t - profit_t_1
 
-            if r_shell > 0:
-                r['Shell'] = 1
-            else:
-                r['Shell'] = -1
+        # calculate reward for Shell
+
+        # as the start for the episode is random in the external data, it does not matter if we use the difference of
+        # the return from step-1 and step or step+1 and step, as it is only shifted "another time" by the reward
+        # calculation
+        # if step == 103:
+        #     print()
+        sub_lvl = self._sub_lvl
+
+        profit_t = resource['Shell'][1] * own_return[step] + sub_lvl * resource['Shell'][0]\
+                   + sub_lvl * self._support[1] * resource['Shell'][1]
+        profit_t_1 = prev_res['Shell'][1] * own_return[step+1] + prev_sub_lvl * prev_res['Shell'][0] \
+                     + prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1]
+        r_shell = profit_t_1 - profit_t
+
+        # V1: calculation based on profit of current time step
+        r['Shell'] = profit_t
+
+        # calculation based on profit of difference between current and previous time step
+        # if r_shell > 0:
+        #     r['Shell'] = 1
+        # else:
+        #     r['Shell'] = -1
 
         # self.reward_shell_split = np.array([r_shell, resource['Shell']['Shell'] * own_return,
         #                                     sub_lvl * resource.loc['Shell', 'FSC'],
@@ -158,12 +153,9 @@ class FSCNetworkEnvAlternative(object):
     def set_data(self) -> NoReturn:
         # set starting point of the external data randomly for reward calculation
         ep_len = self._episode_len
-        sl = copy.deepcopy(self._shell_data_orig)
-        sd = copy.deepcopy(self._shared_data_orig)
-        start = np.random.choice(range(0, sd.shape[0] - ep_len + 1))
-
-        self._shell_data = sl.iloc[start:start + ep_len]
-        self._shared_data = sd.iloc[start:start + ep_len]
+        ext = copy.deepcopy(self._own_return_orig)
+        start = np.random.choice(range(0, len(ext) - ep_len))
+        self._own_return = ext[start:start + ep_len + 1]
 
     def step(self, actions) -> (Dict[str, np.ndarray], Dict, bool, Dict, np.ndarray):
 
@@ -261,10 +253,11 @@ class FSCNetworkEnvAlternative(object):
 def load_data(agents: list, num_weeks) -> [pd.DataFrame, pd.DataFrame]:
 
     # if data was already created, just load it
-    if (DATADIR / 'df_lead_agg_weeks_{}'.format(num_weeks)).is_file():
+    if (DATADIR / 'df_ext_agg_weeks_{}'.format(num_weeks)).is_file():
         print('--------------------------      loaded saved data successfully      --------------------------')
-        return torch.load((DATADIR / 'df_lead_agg_weeks_{}'.format(num_weeks))), \
-               torch.load((DATADIR / 'df_shell_agg_weeks_{}'.format(num_weeks)))
+        return torch.load((DATADIR / 'df_ext_agg_weeks_{}'.format(num_weeks)))
+        # return torch.load((DATADIR / 'df_lead_agg_weeks_{}'.format(num_weeks))), \
+        #        torch.load((DATADIR / 'df_shell_agg_weeks_{}'.format(num_weeks)))
 
     # define all possible weeks to see which weekly data is missing
     file = DATADIR / EXCELFILE
@@ -279,50 +272,40 @@ def load_data(agents: list, num_weeks) -> [pd.DataFrame, pd.DataFrame]:
     leading_df.drop(leading_df[leading_df.index > pd.Timestamp(year=2020, month=1, day=1)].index, inplace=True)
 
     # load agent specific data
-    if 'Shell' in agents:
-        shell_data = load_shell(leading_df)
+    shell_data = load_shell(leading_df)
 
     # aggregate weekly data of leading_df
     df_lead = pd.DataFrame()
     for j in range(0, leading_df.shape[0], num_weeks):
         df_lead = df_lead.append(pd.DataFrame(
             leading_df['CO2_price'].iloc[[i for i in range(j, j + num_weeks) if i < leading_df.shape[0]]].mean(axis=0),
-            columns=['CO2_price'],
-            index=[leading_df.index[j]]))
+            columns=['CO2_price'], index=[leading_df.index[j]]))
 
     # aggregate weekly data of shell_data (sum of data is taken instead of mean for some columns)
     tmp = []
     for k, col in enumerate(shell_data.columns):
         df = pd.DataFrame()
         for j in range(0, shell_data.shape[0], num_weeks):
-            # profitability data must be averaged
-            if col == 'ROE' or col == 'ROA' or col == 'ROC':
-                df = df.append(pd.DataFrame(
-                    shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].mean(axis=0),
-                    columns=[col],
-                    index=[shell_data.index[j]]))
-            else:
-                df = df.append(pd.DataFrame(
-                    shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].sum(axis=0),
-                    columns=[col],
-                    index=[shell_data.index[j]]))
+            df = df.append(pd.DataFrame(
+                shell_data[col].iloc[[i for i in range(j, j + num_weeks) if i < shell_data.shape[0]]].mean(axis=0),
+                columns=[col], index=[shell_data.index[j]]))
         tmp.append(df)
     df_shell = pd.concat([i for i in tmp], axis=1)
 
     print('--------------------------------    Data successfully loaded.    --------------------------------')
 
     # modify the index, so that it is composed of the year and the week only
-    df_lead = index_to_m_y(df_lead)
-    df_shell = index_to_m_y(df_shell)
-    torch.save(df_lead, (DATADIR / 'df_lead_agg_weeks_{}'.format(num_weeks)))
-    torch.save(df_shell, (DATADIR / 'df_shell_agg_weeks_{}'.format(num_weeks)))
+    external_data = index_to_m_y(df_lead.join(df_shell))
 
-    return df_lead, df_shell
+    torch.save(external_data, (DATADIR / 'df_ext_agg_weeks_{}'.format(num_weeks)))
+
+    return external_data
 
 
 def load_shell(ld_df: pd.DataFrame) -> pd.DataFrame:
     # load excel and set index
-    shell_orig = pd.read_excel(DATADIR / EXCELFILE, 'shell', usecols=[1, 3, 5, 7, 8, 9, 10]).set_index(['Date'])
+    shell_orig = pd.read_excel(DATADIR / EXCELFILE, 'shell',
+                               usecols=[1, 11, 12, 13, 14, 15, 16], nrows=40).set_index(['Date'])
 
     # shift shell entries and save index values for further data handling
     shell_orig = shell_orig.shift(1, freq='h')
@@ -335,38 +318,20 @@ def load_shell(ld_df: pd.DataFrame) -> pd.DataFrame:
     # remove 2020 data, as there is no quarterly data available
     shell.drop(shell[shell.index > pd.Timestamp(year=2020, month=1, day=1)].index, inplace=True)
 
-    # calculate weekly data by dividing quarterly values by number of weeks in the quarter
+    # assign quarterly data to the corresponding weeks of the quarter
     tmp = len(idx_val) - 1
     for i in range(tmp):
-        num_ent = shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), 'CO2_price'].count()
         for key in shell.keys():
             if key != 'CO2_price':
-                # profitability data must not be averaged
-                if key == 'ROE' or key == 'ROA' or key == 'ROC':
-                    shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), key] \
-                        = shell.loc[idx_val[i], key]
-                else:
-                    shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), key] \
-                        = shell.loc[idx_val[i], key] / num_ent
+                shell.loc[(idx_val[i + 1] < shell.index) & (shell.index < idx_val[i]), key] = shell.loc[idx_val[i], key]
 
-    # calculate weekly data for first quarter
-    num_ent = shell.loc[shell.index < idx_val[tmp], 'CO2_price'].count()
+    # assign quarterly data of first quarter
     for key in shell.keys():
         if key != 'CO2_price':
-            # profitability data must not be averaged
-            if key == 'ROE' or key == 'ROA' or key == 'ROC':
-                shell.loc[shell.index < idx_val[tmp], key] = shell.loc[idx_val[tmp], key]
-            else:
-                shell.loc[shell.index < idx_val[tmp], key] = shell.loc[idx_val[tmp], key] / num_ent
+            shell.loc[shell.index < idx_val[tmp], key] = shell.loc[idx_val[tmp], key]
 
     # remove shifted shell values
     shell.dropna(axis='index', how='any', subset=['CO2_price'], inplace=True)
-
-    # check if translation from quarterly to weekly data was correct
-    val_test = [(shell[key].sum() - shell_orig[key].sum())**2 < 1.0 for key in shell.keys()
-                if (key != 'CO2_price' and key != 'ROE' and key != 'ROA' and key != 'ROC')]
-    if val_test.count(False):
-        raise ValueError('Translation from quarterly to weekly data went wrong: fsc_network_env.load_shell()')
 
     # reshift to original dates
     shell = shell.shift(-2, freq='D')
@@ -387,3 +352,12 @@ def split_data(data: pd.DataFrame) -> (pd.DataFrame, pd.DataFrame):
     train = data.drop(index=['2018', '2019'])
 
     return train, test
+
+
+def reward_pre_calc(df):
+    ln = df.shape[0]
+    own_return = np.zeros(ln)
+    for s in range(ln):
+        own_return[s] = 1/3 * ((df.iloc[s]['ROE'] + df.iloc[s]['ROA'] + df.iloc[s]['ROC']) - df.iloc[s]['CO2_price'] *
+                               (df.iloc[s]['m_CO2_TotCap'] + df.iloc[s]['m_CO2_TotAss'] + df.iloc[s]['m_CO2_ShEq']))
+    return own_return
