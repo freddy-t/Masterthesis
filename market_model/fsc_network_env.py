@@ -13,19 +13,21 @@ np.random.seed(42)
 
 class FSCNetworkEnvAlternative(object):
 
-    def __init__(self, agt, init_sup, init_res, ep_len, delta_res, sup_fac, n_state_space,
+    def __init__(self, init_sup, init_res, ep_len, delta_res, beta, n_state_space,
                  delta_search, base_impacts, sub_max=0.1, mode='train', agg_weeks=4, save_calc=False):
         # setup environment parameters
-        ext_data = load_data(agt, agg_weeks)
+        ext_data = load_data(agg_weeks)
         self._episode_len = ep_len
         self._delta_resource = delta_res
-        self._support_factor = sup_fac
+        self._beta = beta
         self._mode = mode
         self._n_state_space = n_state_space
         self._delta_research = delta_search
         self._base_impacts = base_impacts
         self._sub_max = sub_max
         self._save_calc = save_calc
+        self._impacts = {'Shell': np.zeros(ep_len),
+                         'Gov': np.zeros(ep_len)}
 
         # split to train and test data
         ext_train, ext_test = split_data(ext_data)
@@ -47,7 +49,6 @@ class FSCNetworkEnvAlternative(object):
         self._resource = None
         self._sub_lvl = None
         self._current_step = None
-        self.reward_shell_split = None
 
     def check_if_done(self) -> bool:
         current_step = self._current_step
@@ -92,18 +93,18 @@ class FSCNetworkEnvAlternative(object):
         r = dict()
 
         # calculate reward for FSC
-        # V1.1: base on difference of previous support and current support
-        r['FSC'] = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() - \
-                   (np.array(prev_sup).sum() - 1)
+        diff = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum()-(np.array(prev_sup).sum() - 1)
 
-        # reward is based on previous support
-        # diff = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum() - \
-        #        np.array([0 if key == 'FSC' else orig_sup[key][0] for key in orig_sup.keys()]).sum()
+        # V1.1: based on difference of previous support and current support
+        r['FSC'] = diff
+
+        # V1.2: based on difference of previous support and current support, but with epsilon
         # epsilon = 10**-6
         # if epsilon < diff:
-        #     r = {'FSC': 1}
+        #     r['FSC'] = 1
         # else:
-        #     r = {'FSC': -1}
+        #     r['FSC'] = -1
+
         # reward is based on difference for each agent which is caused by FSC only
         # first entry of r_shares is change due to partner (network effect) and second entry due to fsc influence
         # r_fsc = 0
@@ -115,7 +116,6 @@ class FSCNetworkEnvAlternative(object):
         #     r = {'FSC': -1}
 
         # calculate reward for Shell
-
         # as the start for the episode is random in the external data, it does not matter if we use the difference of
         # the return from step-1 and step or step+1 and step, as it is only shifted "another time" by the reward
         # calculation
@@ -131,23 +131,32 @@ class FSCNetworkEnvAlternative(object):
 
         # V1: calculation based on profit of current time step
         r['Shell'] = profit_t
+        r_shell_split = np.array([r_shell,
+                                  resource['Shell'][1] * own_return[step],
+                                  sub_lvl * resource['Shell'][0],
+                                  prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1]])
 
-        # calculation based on profit of difference between current and previous time step
+        # V2.1: calculation based on difference of profit between current and previous time step
+        # r['Shell'] = r_shell
+
+        # V2.2: calculation based on difference of profit between current and previous time step and +1 and -1 rewards
         # if r_shell > 0:
         #     r['Shell'] = 1
         # else:
         #     r['Shell'] = -1
+        #
+        # r_shell_split = np.array([r_shell,
+        #                           prev_res['Shell'][1] * own_return[step+1] - resource['Shell'][1] * own_return[step],
+        #                           prev_sub_lvl * prev_res['Shell'][0] - sub_lvl * resource['Shell'][0],
+        #                           prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1] -
+        #                           sub_lvl * self._support[1] * resource['Shell'][1]])
 
-        # self.reward_shell_split = np.array([r_shell, resource['Shell']['Shell'] * own_return,
-        #                                     sub_lvl * resource.loc['Shell', 'FSC'],
-        #                                   sub_lvl * self._support.loc['support', 'Shell']*resource['Shell']['Shell']])
+        return r, r_shell_split
 
-        return r
-
-    def set(self, delta_res, sup_fac, delta_search):
+    def set(self, delta_res, beta, delta_search):
         # set missing parameters, if they haven't been set while initializing the environment
         self._delta_resource = delta_res
-        self._support_factor = sup_fac
+        self._beta = beta
         self._delta_research = delta_search
 
     def set_data(self) -> NoReturn:
@@ -167,32 +176,54 @@ class FSCNetworkEnvAlternative(object):
 
         # auxiliary variables
         fsc_par_agt = ['Shell', 'Gov']
-        support_factor = self._support_factor['Shell']
+        beta = self._beta
         prev_support = copy.deepcopy(support)
         prev_resource = copy.deepcopy(resource)
+        step = self._current_step
+        new_impact = {'Shell': 0,
+                        'Gov': 0}
+        orig_impacts = self._impacts
+        impacts = {'Shell': np.zeros(step+1),
+                   'Gov': np.zeros(step+1)}
 
         # perform actions of FSC
         if actions['FSC']['All'] == 0:
             states['FSC'][1] += self._delta_research
-            # set influence of FSC to zero
-            for n, key in enumerate(fsc_par_agt):
-                states['FSC'][n+2] = 0
         elif actions['FSC']['All'] == 1:
             for n, key in enumerate(fsc_par_agt):
-                states['FSC'][n+2] = states['FSC'][1] * self._base_impacts[key][0]
+                new_impact[key] = states['FSC'][1] * self._base_impacts[key][0]
+            # research state is zero
             states['FSC'][1] = 0
         elif actions['FSC']['All'] == 2:
             for n, key in enumerate(fsc_par_agt):
-                states['FSC'][n+2] = states['FSC'][1] * self._base_impacts[key][1]
+                new_impact[key] = states['FSC'][1] * self._base_impacts[key][1]
+            # research state is zero
             states['FSC'][1] = 0
         else:
             raise ValueError('Action for FSC is not defined: env.step()')
 
+        # store the non-decayed impact at the current step
+        for key in fsc_par_agt:
+            orig_impacts[key][step] = new_impact[key]
+
+        tau = 1.5   # after 1 step 51%, after 6 steps 2%
+        # perform exponential decay on impacts of FSC (current step is not included)
+        for key in orig_impacts.keys():
+            for i in range(step+1):
+                impacts[key][i] = orig_impacts[key][i] * np.exp(- (step-i) / tau)
+
+        for n, key in enumerate(fsc_par_agt):
+            states['FSC'][n+2] = impacts[key].sum()
+
         # calculate support for Shell and Gov
-        support[1] = prev_support[1] + prev_resource['Shell'][2] * (prev_support[2] - prev_support[1])\
-                     + states['FSC'][2] * prev_resource['Shell'][0]
-        support[2] = prev_support[2] + prev_resource['Gov'][1] * (prev_support[1] - prev_support[2])\
-                     + states['FSC'][3] * prev_resource['Gov'][0]
+        denom1 = prev_resource['Shell'][0] + prev_resource['Shell'][2]
+        support[1] = prev_support[1] + beta * \
+                     (prev_resource['Shell'][2] / denom1 * (prev_support[2] - prev_support[1])
+                      + prev_resource['Shell'][0] / denom1 * states['FSC'][2])
+        denom2 = np.array(prev_resource['Gov']).sum()
+        support[2] = prev_support[2] + beta * \
+                     (prev_resource['Gov'][1] / denom2 * (prev_support[1] - prev_support[2])
+                      + prev_resource['Gov'][0] / denom2 * states['FSC'][3])
 
         # change negative supports to 0 and larger than 1 to 1
         support = np.array([val if val > 0 else 0 for val in support])
@@ -241,16 +272,16 @@ class FSCNetworkEnvAlternative(object):
 
         # extract support and resource assignment for agent as array
         states = self.get_state(support, resource, states['FSC'][1::])
-        rewards = self.reward(states, prev_support, prev_resource, prev_sub, r_shares_fsc)
+        rewards, r_shell_split = self.reward(states, prev_support, prev_resource, prev_sub, r_shares_fsc)
 
         # update step and check if finished
         self._current_step += 1
         done = self.check_if_done()
 
-        return states, rewards, done, sup_calc, self.reward_shell_split
+        return states, rewards, done, sup_calc, r_shell_split
 
 
-def load_data(agents: list, num_weeks) -> [pd.DataFrame, pd.DataFrame]:
+def load_data(num_weeks) -> [pd.DataFrame, pd.DataFrame]:
 
     # if data was already created, just load it
     if (DATADIR / 'df_ext_agg_weeks_{}'.format(num_weeks)).is_file():

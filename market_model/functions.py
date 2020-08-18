@@ -45,7 +45,7 @@ def create_dir(debug_flag, n_ep, l_ep, lr, env_type='EnvAlt'):
     return save_dir
 
 
-def create_val_dir(debug_flag, env_type='EnvAlt'):
+def create_val_dir(debug_flag, suffix, env_type='EnvAlt'):
     # function creates directory to store data of the training/testing
     dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type + '_val')
 
@@ -62,11 +62,11 @@ def create_val_dir(debug_flag, env_type='EnvAlt'):
     # create directory for the current date or create a new directory in the current date directory
     if not dir_path.is_dir():
         os.mkdir(dir_path)
-        save_dir = dir_path / ('evaluation_run' + str(1))
+        save_dir = dir_path / ('evaluation_run' + str(1) + suffix)
         os.mkdir(save_dir)
     else:
         n_folders = len(next(os.walk(dir_path))[1])
-        save_dir = dir_path / ('evaluation_run' + str(n_folders+1))
+        save_dir = dir_path / ('evaluation_run' + str(n_folders+1) + suffix)
         os.mkdir(save_dir)
 
     return save_dir
