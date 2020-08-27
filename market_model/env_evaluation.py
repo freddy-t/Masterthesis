@@ -42,7 +42,7 @@ SAVE_INTERVAL = 100                        # numbers of updates until data/model
 # define ranges for parameters
 factor = 1000
 range_delta_resource = np.array([0.001, 0.02]) * factor
-range_delta_research = np.array([0.001, 0.1]) * factor
+range_delta_research = np.array([0.01, 0.05]) * factor
 range_beta = np.array([0.01, 1]) * factor
 
 SAVE_DIR = create_val_dir(DEBUG, suffix)
@@ -84,7 +84,7 @@ for sample_step in range(num_samples):
             file.write(str(key) + ': ' + str(CONFIG[key]) + '\n')
 
     # set missing parameters for environment - delta_research only used for EnvAlt
-    env.set(delta_res=delta_resource, beta=beta, delta_search=delta_research)
+    env.set(delta_res=delta_resource, beta=beta, delta_research=delta_research)
 
     # initialize agents and network optimizers and store them in dicts
     _, all_agents = init_agents(ACTION_SPACE, N_STATE_SPACE, REQUIRED_NEURAL_NETS, ACT_AGT, LEARNING_RATE, device)

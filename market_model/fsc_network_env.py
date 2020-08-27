@@ -122,19 +122,25 @@ class FSCNetworkEnvAlternative(object):
         # if step == 103:
         #     print()
         sub_lvl = self._sub_lvl
+        own_return = 0.073
+        sup = self._support[1]
 
-        profit_t = resource['Shell'][1] * own_return[step] + sub_lvl * resource['Shell'][0]\
-                   + sub_lvl * self._support[1] * resource['Shell'][1]
-        profit_t_1 = prev_res['Shell'][1] * own_return[step+1] + prev_sub_lvl * prev_res['Shell'][0] \
-                     + prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1]
+        profit_t = resource['Shell'][1] * (own_return * (1 - sup) + sub_lvl * sup)
+        profit_t_1 = prev_res['Shell'][1] * (own_return * (1 - prev_sup[1]) + prev_sub_lvl * prev_sup[1])
+        # profit_t = resource['Shell'][1] * own_return * (1 - self._support[1]) + sub_lvl * resource['Shell'][0]\
+        #            + sub_lvl * self._support[1] * resource['Shell'][1]
+        # profit_t_1 = prev_res['Shell'][1] * own_return * (1 - prev_sup[1]) + prev_sub_lvl * prev_res['Shell'][0] \
+        #              + prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1]
         r_shell = profit_t_1 - profit_t
 
         # V1: calculation based on profit of current time step
         r['Shell'] = profit_t
-        r_shell_split = np.array([r_shell,
-                                  resource['Shell'][1] * own_return[step],
-                                  sub_lvl * resource['Shell'][0],
-                                  prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1]])
+        r_shell_split = np.array([r_shell, own_return * (1 - sup), sub_lvl * sup, 0])
+
+        # r_shell_split = np.array([r_shell,
+        #                           resource['Shell'][1] * own_return,
+        #                           sub_lvl * resource['Shell'][0],
+        #                           prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1]])
 
         # V2.1: calculation based on difference of profit between current and previous time step
         # r['Shell'] = r_shell
@@ -153,11 +159,11 @@ class FSCNetworkEnvAlternative(object):
 
         return r, r_shell_split
 
-    def set(self, delta_res, beta, delta_search):
+    def set(self, delta_res, beta, delta_research):
         # set missing parameters, if they haven't been set while initializing the environment
         self._delta_resource = delta_res
         self._beta = beta
-        self._delta_research = delta_search
+        self._delta_research = delta_research
 
     def set_data(self) -> NoReturn:
         # set starting point of the external data randomly for reward calculation
@@ -231,10 +237,14 @@ class FSCNetworkEnvAlternative(object):
 
         if self._save_calc:
             sup_calc = dict()
-            sup_calc['Shell'] = [prev_support[1], prev_resource['Shell'][2] * (prev_support[2] - prev_support[1]),
-                                 states['FSC'][2] * prev_resource['Shell'][0], support[1]]
-            sup_calc['Gov'] = [prev_support[2], prev_resource['Gov'][1] * (prev_support[1] - prev_support[2]),
-                               states['FSC'][3] * prev_resource['Gov'][0], support[2]]
+            sup_calc['Shell'] = [prev_support[1],
+                                 beta * prev_resource['Shell'][2] / denom1 * (prev_support[2] - prev_support[1]),
+                                 beta * prev_resource['Shell'][0] / denom1 * states['FSC'][2],
+                                 support[1]]
+            sup_calc['Gov'] = [prev_support[2],
+                               beta * prev_resource['Gov'][1] / denom2 * (prev_support[1] - prev_support[2]),
+                               beta * prev_resource['Gov'][0] / denom2 * states['FSC'][3],
+                               support[2]]
             r_shares_fsc = {'Shell': [], 'Gov': []}
 
         # set level of subsidies
