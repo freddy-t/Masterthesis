@@ -12,7 +12,7 @@ from functions import create_val_dir, create_dict
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEBUG = False             # True if in debug mode
 num_samples = 100
-suffix = '_fsc_V1.1_shell_V1'
+suffix = '_fsc_V2.2_eps4_0.05_shell_V2.1'
 
 # constant model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
@@ -21,7 +21,7 @@ ACTION_SPACE = [0, 1, 2]                            # action definition: 0 = dec
 N_STATE_SPACE = {'FSC': 4,
                  'Shell': 4,
                  'Gov': 3}
-INIT_SUPPORT = [1, 0.1, 0.1]                        # initial support by the agents, must be in order (FSC, Shell, Gov)
+INIT_SUPPORT = [np.inf, 0.0, 0.0]                   # initial support by the agents, must be in order (FSC, Shell, Gov)
 INIT_RESOURCE = {'Shell': [0.025,  0.95, 0.025],    # initial resource assignment  FSC  Shell  Gov
                  'Gov':   [0.5,   0.5]}
 BASE_IMPACTS = {'Shell': [0.38, 0.11],              # impact according to action 2 and 3 on agent
@@ -37,7 +37,7 @@ NUM_EPISODES = 10                     # 78 corresponds to 6 years for agg_weeks=
 LEARNING_RATE = 0.001
 BATCH_SIZE = NUM_EPISODES
 GAMMA = 0.99
-SAVE_INTERVAL = 100                        # numbers of updates until data/model is saved
+SAVE_INTERVAL = 100                   # numbers of updates until data/model is saved
 
 # define ranges for parameters
 factor = 1000

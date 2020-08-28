@@ -3,7 +3,7 @@ import copy
 import time
 import numpy as np
 from agents import init_agents
-from fsc_network_env import FSCNetworkEnv, FSCNetworkEnvAlternative
+from fsc_network_env import FSCNetworkEnvAlternative
 from functions import discount_rewards, create_dir, create_dict
 from torch.utils.tensorboard import SummaryWriter
 
@@ -17,7 +17,6 @@ DEBUG = True                 # True if in debug mode
 save_calc = False             # True if support and resource calculations should be saved
 store_graph = False          # True if computational graph of network should be saved
 MODE = 'train'               # 'train' for training mode, otherwise testing data is used
-env_type = 'EnvAlt'           # EnvAlt or Env
 
 # model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
@@ -25,36 +24,25 @@ ACT_AGT = ['FSC', 'Shell']               # set the active agents
 ACTION_SPACE = [0, 1, 2]                 # action definition: 0 = decrease, 1 = maintain, 2 = increase
 N_STATE_SPACE = {'FSC': 4,
                  'Shell': 4,
-                 'Gov': 4}
-if env_type == 'Env':                                # defines, which neural nets must be defined
-    REQUIRED_NEURAL_NETS = {'FSC':   ['Shell', 'Gov'],
-                            'Shell': ['FSC'],
-                            'Gov':   []}
-elif env_type == 'EnvAlt':
-    REQUIRED_NEURAL_NETS = {'FSC':   ['All'],
-                            'Shell': ['FSC'],
-                            'Gov':   []}
-else:
-    raise ValueError('environment must be defined')
+                 'Gov': 3}
 
-# parameters to evaluate
-INIT_SUPPORT = [[1, 0.1, 0.1]]           # initial support by the agents, must be in order as in AGENTS
-                                         # initial resource assignment       #       FSC  Shell  Gov
-#INIT_RESOURCE = [[0.95,   0.05, 0.00],                                       # FSC
-INIT_RESOURCE = [[0.025,  0.95, 0.025],                                      # Shell
-                 [0.05,   0.05, 0.90]]                                       # Gov
-SUB_LVL = 0.05                           # level of subsidy
+INIT_SUPPORT = [np.inf, 0.0, 0.0]                   # initial support by the agents, must be in order (FSC, Shell, Gov)
+INIT_RESOURCE = {'Shell': [0.025,  0.95, 0.025],    # initial resource assignment  FSC  Shell  Gov
+                 'Gov':   [0.5,   0.5]}
+BASE_IMPACTS = {'Shell': [0.38, 0.11],              # impact according to action 2 and 3 on agent
+                'Gov':   [0.03, 0.33]}
+
+REQUIRED_NEURAL_NETS = {'FSC':   ['All'],
+                        'Shell': ['FSC', 'Gov'],
+                        'Gov':   []}
+
 DELTA_RESOURCE = 0.005                   # factor by which resource assignment is changed due to action
-BETAS = {'FSC': 1,                   # factor influences how fast support is changed due to interaction
-         'Shell': 1,
-         'Gov': 1}
 DELTA_RESEARCH = 0.1                     # factor by which research is changed due to action of FSC
-BASE_IMPACTS = {'Shell': [0.19, 0.09],     # impact according to action 2 and 3 on agent
-                'Gov':   [0.05, 0.18]}
+BETA = 0.05                              # factor influences how fast support is changed due to interaction
 
 # RL parameters
 LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
-NUM_EPISODES = 10
+NUM_EPISODES = 1000
 LEARNING_RATE = 0.001
 BATCH_SIZE = 10
 GAMMA = 0.99
@@ -64,11 +52,10 @@ CONFIG = {'agents': AGENTS,
           'active_agents': ACT_AGT,
           'init_support': INIT_SUPPORT,
           'init_resource': INIT_RESOURCE,
-          'sub_lvl': SUB_LVL,
           'delta_resource': DELTA_RESOURCE,
           'delta_research': DELTA_RESEARCH,
           'base_impacts': BASE_IMPACTS,
-          'beta_j': BETAS,
+          'beta': BETA,
           'length_ep': LENGTH_EPISODE,
           'n_ep': NUM_EPISODES,
           'lr': LEARNING_RATE,
@@ -82,7 +69,7 @@ CONFIG = {'agents': AGENTS,
 # ######################################################################################################################
 
 # create saving directory and save config
-SAVE_DIR = create_dir(DEBUG, NUM_EPISODES, LENGTH_EPISODE, LEARNING_RATE, env_type)
+SAVE_DIR = create_dir(DEBUG, NUM_EPISODES, LENGTH_EPISODE, LEARNING_RATE)
 writer = SummaryWriter(SAVE_DIR)
 torch.save(CONFIG, (SAVE_DIR / 'config'), _use_new_zipfile_serialization=False)
 with open((SAVE_DIR / 'config.txt'), 'w') as file:
@@ -90,15 +77,9 @@ with open((SAVE_DIR / 'config.txt'), 'w') as file:
         file.write(str(key) + ': ' + str(CONFIG[key]) + '\n')
 
 # create environment
-if env_type == 'Env':
-    env = FSCNetworkEnv(agt=AGENTS, init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, sub_lvl=SUB_LVL,
-                        ep_len=LENGTH_EPISODE, delta_res=DELTA_RESOURCE, sup_fac=BETAS, n_state_space=N_STATE_SPACE,
-                        agg_weeks=4)
-elif env_type == 'EnvAlt':
-    env = FSCNetworkEnvAlternative(agt=AGENTS, init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, sub_lvl=SUB_LVL,
-                                   ep_len=LENGTH_EPISODE, delta_res=DELTA_RESOURCE, sup_fac=BETAS,
-                                   n_state_space=N_STATE_SPACE, delta_search=DELTA_RESEARCH, base_impacts=BASE_IMPACTS,
-                                   agg_weeks=4)
+env = FSCNetworkEnvAlternative(init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, ep_len=LENGTH_EPISODE,
+                               delta_res=DELTA_RESOURCE, beta=BETA, delta_search=DELTA_RESEARCH,
+                               n_state_space=N_STATE_SPACE, base_impacts=BASE_IMPACTS, agg_weeks=4, save_calc=False)
 
 print('--------------------------------    ' + str(device) + '    --------------------------------')
 if device == 'cuda':
@@ -117,10 +98,10 @@ batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
 batch_states = {'FSC':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
                 'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
-support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
-                'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
 batch_rewards = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1]),
                  'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1])}
+support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
+                'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
 reward_shell_calc = np.empty([BATCH_SIZE, LENGTH_EPISODE, 4])
 batch_count = 0
 optim_count = 0
@@ -157,7 +138,7 @@ while ep < NUM_EPISODES:
                 support_calc[key][batch_count][step_count] = sup_calc[key]
             reward_shell_calc[batch_count][step_count] = r_shell
         else:
-            state_1, r1, done = env.step(step_actions)
+            state_1, r1, done, _, _ = env.step(step_actions)
 
         # store rewards
         for agt in ACT_AGT:
@@ -251,8 +232,8 @@ while ep < NUM_EPISODES:
                                    _use_new_zipfile_serialization=False)
 
                 # empty batch
-                batch_returns = {'FSC': [], 'Shell': []}
                 batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
+                batch_returns = {'FSC': [], 'Shell': []}
                 batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
                                 'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
                                 'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}

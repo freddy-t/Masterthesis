@@ -93,10 +93,10 @@ class FSCNetworkEnvAlternative(object):
         r = dict()
 
         # calculate reward for FSC
-        diff = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum()-(np.array(prev_sup).sum() - 1)
+        # diff = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum()-(np.array(prev_sup).sum() - 1)
 
         # V1.1: based on difference of previous support and current support
-        r['FSC'] = diff
+        # r['FSC'] = diff
 
         # V1.2: based on difference of previous support and current support, but with epsilon
         # epsilon = 10**-6
@@ -105,22 +105,23 @@ class FSCNetworkEnvAlternative(object):
         # else:
         #     r['FSC'] = -1
 
-        # reward is based on difference for each agent which is caused by FSC only
+        # V2.1: reward is based on impact of FSC
         # first entry of r_shares is change due to partner (network effect) and second entry due to fsc influence
-        # r_fsc = 0
-        # for key in r_shares.keys():
-        #     r_fsc += r_shares[key][1] - np.abs(r_shares[key][0])
-        # if r_fsc > 0:
-        #     r = {'FSC': 1}
-        # else:
-        #     r = {'FSC': -1}
+        r_fsc = r_shares.sum()
+        # r = {'FSC': r_fsc}
+
+        # V2.2: reward is based on impact of FSC
+        eps = 10**-4
+        if r_fsc > eps:
+            r = {'FSC': r_fsc}
+        else:
+            r = {'FSC': -0.05}
 
         # calculate reward for Shell
         # as the start for the episode is random in the external data, it does not matter if we use the difference of
-        # the return from step-1 and step or step+1 and step, as it is only shifted "another time" by the reward
+        # the return from step minus step-1 or step+1 and step, as it is only shifted "another time" by the reward
+        # --> not using external data anymore
         # calculation
-        # if step == 103:
-        #     print()
         sub_lvl = self._sub_lvl
         own_return = 0.073
         sup = self._support[1]
@@ -131,10 +132,10 @@ class FSCNetworkEnvAlternative(object):
         #            + sub_lvl * self._support[1] * resource['Shell'][1]
         # profit_t_1 = prev_res['Shell'][1] * own_return * (1 - prev_sup[1]) + prev_sub_lvl * prev_res['Shell'][0] \
         #              + prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1]
-        r_shell = profit_t_1 - profit_t
+        r_shell = profit_t - profit_t_1
 
         # V1: calculation based on profit of current time step
-        r['Shell'] = profit_t
+        r['Shell'] = r_shell
         r_shell_split = np.array([r_shell, own_return * (1 - sup), sub_lvl * sup, 0])
 
         # r_shell_split = np.array([r_shell,
@@ -231,12 +232,15 @@ class FSCNetworkEnvAlternative(object):
                      (prev_resource['Gov'][1] / denom2 * (prev_support[1] - prev_support[2])
                       + prev_resource['Gov'][0] / denom2 * states['FSC'][3])
 
+        r_shares_fsc = np.array([prev_resource['Shell'][0] / denom1 * states['FSC'][2],
+                                 prev_resource['Gov'][0] / denom2 * states['FSC'][3]])
+
         # change negative supports to 0 and larger than 1 to 1
         support = np.array([val if val > 0 else 0 for val in support])
         support = np.array([val if val < 1 else 1 for val in support])
 
+        sup_calc = dict()
         if self._save_calc:
-            sup_calc = dict()
             sup_calc['Shell'] = [prev_support[1],
                                  beta * prev_resource['Shell'][2] / denom1 * (prev_support[2] - prev_support[1]),
                                  beta * prev_resource['Shell'][0] / denom1 * states['FSC'][2],
@@ -245,7 +249,6 @@ class FSCNetworkEnvAlternative(object):
                                beta * prev_resource['Gov'][1] / denom2 * (prev_support[1] - prev_support[2]),
                                beta * prev_resource['Gov'][0] / denom2 * states['FSC'][3],
                                support[2]]
-            r_shares_fsc = {'Shell': [], 'Gov': []}
 
         # set level of subsidies
         prev_sub = copy.deepcopy(self._sub_lvl)
