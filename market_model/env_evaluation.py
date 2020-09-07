@@ -10,9 +10,10 @@ from functions import create_val_dir, create_dict
 
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DEBUG = False             # True if in debug mode
+DEBUG = True           # True if in debug mode
 num_samples = 100
-suffix = '_fsc_V2.2_eps4_0.05_shell_V2.1'
+# suffix = '_fsc_V2.1_shell_V1'
+suffix = '_fsc_V2.2_eps22_shell_V2.3_eps13'
 
 # constant model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
@@ -30,6 +31,7 @@ BASE_IMPACTS = {'Shell': [0.38, 0.11],              # impact according to action
 REQUIRED_NEURAL_NETS = {'FSC':   ['All'],
                         'Shell': ['FSC', 'Gov'],
                         'Gov':   []}
+ALPHA = 0.5
 
 # RL parameters
 LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 104
@@ -41,14 +43,14 @@ SAVE_INTERVAL = 100                   # numbers of updates until data/model is s
 
 # define ranges for parameters
 factor = 1000
-range_delta_resource = np.array([0.001, 0.02]) * factor
-range_delta_research = np.array([0.01, 0.05]) * factor
-range_beta = np.array([0.01, 1]) * factor
+range_delta_resource = np.array([0.01, 0.02]) * factor
+range_delta_research = np.array([0.085, 0.09]) * factor
+range_beta = np.array([0.075, 0.08]) * factor
 
 SAVE_DIR = create_val_dir(DEBUG, suffix)
 
 # non constant parameters are passed as None
-env = FSCNetworkEnvAlternative(init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, ep_len=LENGTH_EPISODE,
+env = FSCNetworkEnvAlternative(init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, ep_len=LENGTH_EPISODE, alpha=ALPHA,
                                delta_res=None, beta=None, delta_search=None, n_state_space=N_STATE_SPACE,
                                base_impacts=BASE_IMPACTS, agg_weeks=4, save_calc=True)
 times = []
@@ -68,6 +70,7 @@ for sample_step in range(num_samples):
               'delta_research': delta_research,
               'base_impacts': BASE_IMPACTS,
               'beta': beta,
+              'alpha': ALPHA,
               'length_ep': LENGTH_EPISODE,
               'n_ep': NUM_EPISODES,
               'lr': LEARNING_RATE,

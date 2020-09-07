@@ -13,10 +13,12 @@ from torch.utils.tensorboard import SummaryWriter
 
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DEBUG = True                 # True if in debug mode
+DEBUG = False                 # True if in debug mode
 save_calc = False             # True if support and resource calculations should be saved
 store_graph = False          # True if computational graph of network should be saved
 MODE = 'train'               # 'train' for training mode, otherwise testing data is used
+reward_fun = 'fsc_V2.2_eps4_0.05_shell_V2.1'
+# reward_fun = 'fsc_V2.2_eps22_shell_V2.3_eps13'
 
 # model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
@@ -36,9 +38,10 @@ REQUIRED_NEURAL_NETS = {'FSC':   ['All'],
                         'Shell': ['FSC', 'Gov'],
                         'Gov':   []}
 
-DELTA_RESOURCE = 0.005                   # factor by which resource assignment is changed due to action
-DELTA_RESEARCH = 0.1                     # factor by which research is changed due to action of FSC
-BETA = 0.05                              # factor influences how fast support is changed due to interaction
+DELTA_RESOURCE = 0.015                   # factor by which resource assignment is changed due to action
+DELTA_RESEARCH = 0.09                     # factor by which research is changed due to action of FSC
+BETA = 0.08                              # factor influences how fast support is changed due to interaction
+ALPHA = 0
 
 # RL parameters
 LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
@@ -56,6 +59,8 @@ CONFIG = {'agents': AGENTS,
           'delta_research': DELTA_RESEARCH,
           'base_impacts': BASE_IMPACTS,
           'beta': BETA,
+          'alpha': ALPHA,
+          'reward_function': reward_fun,
           'length_ep': LENGTH_EPISODE,
           'n_ep': NUM_EPISODES,
           'lr': LEARNING_RATE,
@@ -69,7 +74,7 @@ CONFIG = {'agents': AGENTS,
 # ######################################################################################################################
 
 # create saving directory and save config
-SAVE_DIR = create_dir(DEBUG, NUM_EPISODES, LENGTH_EPISODE, LEARNING_RATE)
+SAVE_DIR = create_dir(DEBUG, NUM_EPISODES, LEARNING_RATE)
 writer = SummaryWriter(SAVE_DIR)
 torch.save(CONFIG, (SAVE_DIR / 'config'), _use_new_zipfile_serialization=False)
 with open((SAVE_DIR / 'config.txt'), 'w') as file:
@@ -77,7 +82,7 @@ with open((SAVE_DIR / 'config.txt'), 'w') as file:
         file.write(str(key) + ': ' + str(CONFIG[key]) + '\n')
 
 # create environment
-env = FSCNetworkEnvAlternative(init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, ep_len=LENGTH_EPISODE,
+env = FSCNetworkEnvAlternative(init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, ep_len=LENGTH_EPISODE, alpha=ALPHA,
                                delta_res=DELTA_RESOURCE, beta=BETA, delta_search=DELTA_RESEARCH,
                                n_state_space=N_STATE_SPACE, base_impacts=BASE_IMPACTS, agg_weeks=4, save_calc=False)
 

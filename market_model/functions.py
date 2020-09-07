@@ -16,7 +16,7 @@ def discount_rewards(rewards, gamma):
     return r
 
 
-def create_dir(debug_flag, n_ep, l_ep, lr, env_type='EnvAlt'):
+def create_dir(debug_flag, n_ep, lr, env_type='EnvAlt'):
     # function creates directory to store data of the training/testing
     dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type)
 
@@ -34,12 +34,12 @@ def create_dir(debug_flag, n_ep, l_ep, lr, env_type='EnvAlt'):
     n_folders = 0
     if not dir_path.is_dir():
         os.mkdir(dir_path)
-        save_dir = dir_path / (str(1) + '_n_ep' + str(n_ep) + '_l_ep' + str(l_ep) + '_lr' + str(lr))
+        save_dir = dir_path / ('exp' + str(1) + '_n_ep' + str(n_ep) + '_lr' + str(lr))
         os.mkdir(save_dir)
     else:
         for _, dirnames, _ in os.walk(dir_path):
             n_folders += len(dirnames)
-        save_dir = dir_path / (str(n_folders+1) + '_n_ep' + str(n_ep) + '_l_ep' + str(l_ep) + '_lr' + str(lr))
+        save_dir = dir_path / ('exp' + str(n_folders+1) + '_n_ep' + str(n_ep) + '_lr' + str(lr))
         os.mkdir(save_dir)
 
     return save_dir
