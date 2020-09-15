@@ -9,14 +9,14 @@ np.random.seed(42)
 class Agent(object):
     def __init__(self, act_space, n_state, device):
         self.__state = None
-        self.__n_neurons = 16
+        n_neurons = 16
         self.__action_space = act_space
         self._device = device
 
-        # Define network
-        self.__base_network = nn.Sequential(nn.Linear(n_state, self.__n_neurons),
-                                            nn.ReLU(),
-                                            nn.Linear(self.__n_neurons, len(act_space)),
+        # Define the neural network
+        self.__base_network = nn.Sequential(nn.Linear(n_state, n_neurons),
+                                            nn.PReLU(n_neurons),          # using an alpha for each neuron
+                                            nn.Linear(n_neurons, len(act_space)),
                                             nn.Softmax(dim=-1))
 
     def get_actions(self, state) -> dict:

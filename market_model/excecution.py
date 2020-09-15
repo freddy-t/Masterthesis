@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DEBUG = False                 # True if in debug mode
+DEBUG = True                 # True if in debug mode
 save_calc = False             # True if support and resource calculations should be saved
 store_graph = False          # True if computational graph of network should be saved
 MODE = 'train'               # 'train' for training mode, otherwise testing data is used

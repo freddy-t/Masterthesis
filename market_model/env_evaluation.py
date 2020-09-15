@@ -11,9 +11,8 @@ from functions import create_val_dir, create_dict
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEBUG = True           # True if in debug mode
-num_samples = 100
 # suffix = '_fsc_V2.1_shell_V1'
-suffix = '_fsc_V2.2_eps22_shell_V2.3_eps13'
+suffix = '_fsc_V2.3_eps0.15_0.17_shell_V2.2_eps0.000025'
 
 # constant model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
@@ -42,11 +41,15 @@ GAMMA = 0.99
 SAVE_INTERVAL = 100                   # numbers of updates until data/model is saved
 
 # define ranges for parameters
-factor = 1000
-range_delta_resource = np.array([0.01, 0.02]) * factor
-range_delta_research = np.array([0.085, 0.09]) * factor
-range_beta = np.array([0.075, 0.08]) * factor
-
+# factor = 1000
+# range_delta_resource = np.array([0.01, 0.02]) * factor
+# range_delta_research = np.array([0.085, 0.09]) * factor
+# range_beta = np.array([0.075, 0.08]) * factor
+# investigated ranges: resource: 0.01, 0.06, 0.005; research: 0.01, 0.25, 0.01; beta: 0.05, 0.25, 0.02
+range_delta_resource = np.arange(0.01, 0.06, 0.005)
+range_beta = np.array([0.05, 0.10, 0.15, 0.20])
+range_delta_research = np.array([0.17, 0.08, 0.05, 0.03])
+# range_delta_research = np.arange(0.01, 0.25, 0.01)
 SAVE_DIR = create_val_dir(DEBUG, suffix)
 
 # non constant parameters are passed as None
@@ -54,135 +57,142 @@ env = FSCNetworkEnvAlternative(init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, ep
                                delta_res=None, beta=None, delta_search=None, n_state_space=N_STATE_SPACE,
                                base_impacts=BASE_IMPACTS, agg_weeks=4, save_calc=True)
 times = []
-for sample_step in range(num_samples):
-    start_time = time.time()
+# while sample_step < num_samples:
+#     start_time = time.time()
 
-    # sample evaluation parameters
-    delta_resource = random.randrange(range_delta_resource[0], range_delta_resource[1]+1) / factor
-    beta = random.randrange(range_beta[0], range_beta[1]+1) / factor
-    delta_research = random.randrange(range_delta_research[0], range_delta_research[1]+1) / factor
+# sample evaluation parameters
+# delta_resource = random.randrange(range_delta_resource[0], range_delta_resource[1]+1) / factor
+# beta = random.randrange(range_beta[0], range_beta[1]+1) / factor
+# delta_research = random.randrange(range_delta_research[0], range_delta_research[1]+1) / factor
+sample_step = -1
+for i in range(4):
+    delta_research = range_delta_research[i]
+    beta = range_beta[i]
+    for delta_resource in range_delta_resource:
+        sample_step += 1
+        start_time = time.time()
 
-    CONFIG = {'agents': AGENTS,
-              'active_agents': ACT_AGT,
-              'init_support': INIT_SUPPORT,
-              'init_resource': INIT_RESOURCE,
-              'delta_resource': delta_resource,
-              'delta_research': delta_research,
-              'base_impacts': BASE_IMPACTS,
-              'beta': beta,
-              'alpha': ALPHA,
-              'length_ep': LENGTH_EPISODE,
-              'n_ep': NUM_EPISODES,
-              'lr': LEARNING_RATE,
-              'batch_size': BATCH_SIZE,
-              'gamma': GAMMA,
-              'save_interval': SAVE_INTERVAL}
+        CONFIG = {'agents': AGENTS,
+                  'active_agents': ACT_AGT,
+                  'init_support': INIT_SUPPORT,
+                  'init_resource': INIT_RESOURCE,
+                  'delta_resource': delta_resource,
+                  'delta_research': delta_research,
+                  'base_impacts': BASE_IMPACTS,
+                  'beta': beta,
+                  'alpha': ALPHA,
+                  'length_ep': LENGTH_EPISODE,
+                  'n_ep': NUM_EPISODES,
+                  'lr': LEARNING_RATE,
+                  'batch_size': BATCH_SIZE,
+                  'gamma': GAMMA,
+                  'save_interval': SAVE_INTERVAL}
 
-    # create saving directory and save config
-    sample_dir = SAVE_DIR / ('sample_no' + str(sample_step))
-    os.mkdir(sample_dir)
-    torch.save(CONFIG, (sample_dir / 'config'), _use_new_zipfile_serialization=False)
-    with open((sample_dir / 'config.txt'), 'w') as file:
-        for key in CONFIG.keys():
-            file.write(str(key) + ': ' + str(CONFIG[key]) + '\n')
+        # create saving directory and save config
+        sample_dir = SAVE_DIR / ('sample_no' + str(sample_step))
+        os.mkdir(sample_dir)
+        torch.save(CONFIG, (sample_dir / 'config'), _use_new_zipfile_serialization=False)
+        with open((sample_dir / 'config.txt'), 'w') as file:
+            for key in CONFIG.keys():
+                file.write(str(key) + ': ' + str(CONFIG[key]) + '\n')
 
-    # set missing parameters for environment - delta_research only used for EnvAlt
-    env.set(delta_res=delta_resource, beta=beta, delta_research=delta_research)
+        # set missing parameters for environment - delta_research only used for EnvAlt
+        env.set(delta_res=delta_resource, beta=beta, delta_research=delta_research)
 
-    # initialize agents and network optimizers and store them in dicts
-    _, all_agents = init_agents(ACTION_SPACE, N_STATE_SPACE, REQUIRED_NEURAL_NETS, ACT_AGT, LEARNING_RATE, device)
+        # initialize agents and network optimizers and store them in dicts
+        _, all_agents = init_agents(ACTION_SPACE, N_STATE_SPACE, REQUIRED_NEURAL_NETS, ACT_AGT, LEARNING_RATE, device)
 
-    # initialise loop variables
-    batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
-    batch_states = {'FSC':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
-                    'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
-                    'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
-    batch_rewards = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1]),
-                     'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1])}
-    support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
-                    'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
-    r_shell = np.empty([BATCH_SIZE, LENGTH_EPISODE, 4])
-    batch_count = 0
-    step_count = 0
-    ep = 0
+        # initialise loop variables
+        batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
+        batch_states = {'FSC':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
+                        'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
+                        'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
+        batch_rewards = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1]),
+                         'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1])}
+        support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
+                        'Gov':   np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
+        r_shell = np.empty([BATCH_SIZE, LENGTH_EPISODE, 4])
+        batch_count = 0
+        step_count = 0
+        ep = 0
 
-    # loop over all episodes (= rollouts)
-    while ep < NUM_EPISODES:
-        ep += 1
+        # loop over all episodes (= rollouts)
+        while ep < NUM_EPISODES:
+            ep += 1
 
-        state_0 = env.reset()
-        states = {'FSC':   np.empty([LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
-                  'Shell': np.empty([LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
-                  'Gov':   np.empty([LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
-        rewards = {'FSC': np.empty([LENGTH_EPISODE, 1]), 'Shell': np.empty([LENGTH_EPISODE, 1])}
-        actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
-        step_actions = {}
-        done = False
+            state_0 = env.reset()
+            states = {'FSC':   np.empty([LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
+                      'Shell': np.empty([LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
+                      'Gov':   np.empty([LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
+            rewards = {'FSC': np.empty([LENGTH_EPISODE, 1]), 'Shell': np.empty([LENGTH_EPISODE, 1])}
+            actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
+            step_actions = {}
+            done = False
 
-        # loop over episode steps
-        while not done:
+            # loop over episode steps
+            while not done:
 
-            # get action from each agent and store it
-            step_actions = {'FSC':   {'All': random.choice(ACTION_SPACE)},
-                            'Shell': {'FSC': random.choice(ACTION_SPACE),
-                                      'Gov': random.choice(ACTION_SPACE)}}
+                # get action from each agent and store it
+                step_actions = {'FSC':   {'All': random.choice(ACTION_SPACE)},
+                                'Shell': {'FSC': random.choice(ACTION_SPACE),
+                                          'Gov': random.choice(ACTION_SPACE)}}
 
-            for key in ACT_AGT:
-                for par_agt in actions[key].keys():
-                    actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
+                for key in ACT_AGT:
+                    for par_agt in actions[key].keys():
+                        actions[key][par_agt].append(copy.copy(step_actions[key][par_agt]))
 
-            # perform action on environment
-            state_1, r1, done, sup_calc, r_shell[batch_count][step_count] = env.step(step_actions)
-            for key in support_calc.keys():
-                support_calc[key][batch_count][step_count] = sup_calc[key]
+                # perform action on environment
+                state_1, r1, done, sup_calc, r_shell[batch_count][step_count] = env.step(step_actions)
+                for key in support_calc.keys():
+                    support_calc[key][batch_count][step_count] = sup_calc[key]
 
-            # store rewards
-            for agt in ACT_AGT:
-                rewards[agt][step_count] = r1[agt]
+                # store rewards
+                for agt in ACT_AGT:
+                    rewards[agt][step_count] = r1[agt]
 
-            # update old state and save current state
-            for key in AGENTS:
-                states[key][step_count] = state_0[key]
-            state_0 = state_1
-            step_count += 1
+                # update old state and save current state
+                for key in AGENTS:
+                    states[key][step_count] = state_0[key]
+                state_0 = state_1
+                step_count += 1
 
-            # if done (= new rollout complete), data is put into the batch
-            if done:
-                step_count = 0
-                # put data in batch
-                for agt in AGENTS:
-                    batch_states[agt][batch_count] = states[agt]
-                    if agt != 'Gov':
-                        batch_rewards[agt][batch_count] = rewards[agt]
-                        for par_agt in actions[agt].keys():
-                            batch_actions[agt][par_agt].extend(actions[agt][par_agt])
+                # if done (= new rollout complete), data is put into the batch
+                if done:
+                    step_count = 0
+                    # put data in batch
+                    for agt in AGENTS:
+                        batch_states[agt][batch_count] = states[agt]
+                        if agt != 'Gov':
+                            batch_rewards[agt][batch_count] = rewards[agt]
+                            for par_agt in actions[agt].keys():
+                                batch_actions[agt][par_agt].extend(actions[agt][par_agt])
 
-                batch_count += 1
-                # if batch is full, save batch data and empty it
-                if batch_count == BATCH_SIZE:
-                    batch_count = 0
-                    torch.save(batch_rewards, (sample_dir / 'rewards'), _use_new_zipfile_serialization=False)
-                    torch.save(batch_states, (sample_dir / 'batch_states'), _use_new_zipfile_serialization=False)
-                    torch.save(batch_actions, (sample_dir / 'batch_actions'), _use_new_zipfile_serialization=False)
-                    torch.save(support_calc, (sample_dir / 'support_calc'), _use_new_zipfile_serialization=False)
-                    torch.save(r_shell, (sample_dir / 'r_shell'), _use_new_zipfile_serialization=False)
+                    batch_count += 1
+                    # if batch is full, save batch data and empty it
+                    if batch_count == BATCH_SIZE:
+                        batch_count = 0
+                        torch.save(batch_rewards, (sample_dir / 'rewards'), _use_new_zipfile_serialization=False)
+                        torch.save(batch_states, (sample_dir / 'batch_states'), _use_new_zipfile_serialization=False)
+                        torch.save(batch_actions, (sample_dir / 'batch_actions'), _use_new_zipfile_serialization=False)
+                        torch.save(support_calc, (sample_dir / 'support_calc'), _use_new_zipfile_serialization=False)
+                        torch.save(r_shell, (sample_dir / 'r_shell'), _use_new_zipfile_serialization=False)
 
-                    batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
-                    batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
-                                    'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
-                                    'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
-                    batch_rewards = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1]),
-                                     'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1])}
-                    support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
-                                    'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
-                    r_shell = np.empty([BATCH_SIZE, LENGTH_EPISODE, 4])
+                        batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
+                        batch_states = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['FSC']]),
+                                        'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Shell']]),
+                                        'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, N_STATE_SPACE['Gov']])}
+                        batch_rewards = {'FSC': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1]),
+                                         'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, 1])}
+                        support_calc = {'Shell': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1]),
+                                        'Gov': np.empty([BATCH_SIZE, LENGTH_EPISODE, len(AGENTS) + 1])}
+                        r_shell = np.empty([BATCH_SIZE, LENGTH_EPISODE, 4])
 
-    # take time and save it
-    times.append(time.time() - start_time)
-    torch.save(times, (sample_dir / 'running_times'), _use_new_zipfile_serialization=False)
+        # take time and save it
+        times.append(time.time() - start_time)
+        torch.save(times, (sample_dir / 'running_times'), _use_new_zipfile_serialization=False)
 
-    # Print moving average
-    if sample_step % 5 == 0:
-        print('Sample {} complete. Avg time of last 10 episodes: {:.3f} sec.'.format(sample_step, np.mean(times[-10:])))
+        # Print moving average
+        if sample_step % 5 == 0:
+            print('Sample {} complete. Avg time of last 10 episodes: {:.3f} sec.'.format(sample_step, np.mean(times[-10:])))
 
 print('Total time for {} samples: {:.3f}'.format(sample_step+1, np.sum(times)))

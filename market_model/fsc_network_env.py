@@ -1,4 +1,4 @@
-from typing import Dict, List, NoReturn
+from typing import Dict, NoReturn
 import numpy as np
 import pandas as pd
 import copy
@@ -91,78 +91,71 @@ class FSCNetworkEnvAlternative(object):
         resource = self._resource
         step = self._current_step
         states = self._states
-        own_return = self._own_return
+        delta_research = self._delta_research
         r = dict()
 
         # calculate reward for FSC
-        # diff = np.array([0 if key == 'FSC' else obs[key][0] for key in obs.keys()]).sum()-(np.array(prev_sup).sum() - 1)
-
-        # V1.1: based on difference of previous support and current support
-        # r['FSC'] = diff
-
-        # V1.2: based on difference of previous support and current support, but with epsilon
-        # epsilon = 10**-6
-        # if epsilon < diff:
-        #     r['FSC'] = 1
-        # else:
-        #     r['FSC'] = -1
+        denom1 = resource['Shell'][0] + resource['Shell'][2]
+        if denom1 == 0:   # catch case where resource allocation is zero, thus is does not matter must not be zero
+            denom1 = 1
+        r_fsc = np.array([resource['Shell'][0] / denom1 * states['FSC'][2],
+                          resource['Gov'][0] / np.array(resource['Gov']).sum() * states['FSC'][3]]).sum()
+        r_fsc /= delta_research
 
         # V2.1: reward is based on impact of FSC
-        # first entry of r_shares is change due to partner (network effect) and second entry due to fsc influence
-        denom1 = resource['Shell'][0] + resource['Shell'][2]
-        denom2 = np.array(resource['Gov']).sum()
-        r_fsc = np.array([resource['Shell'][0] / denom1 * states['FSC'][2],
-                          resource['Gov'][0] / denom2 * states['FSC'][3]]).sum()
         # r = {'FSC': r_fsc}
 
-        # V2.2: reward is based on impact of FSC
-        if r_fsc > 10**-4:
+        # V2.3: reward is based on impact of FSC
+        # 20 * self._beta * delta_research
+        if r_fsc > 0.15:
             r['FSC'] = r_fsc
         else:
-            r['FSC'] = -0.05
+            r['FSC'] = - 0.17
 
         # calculate reward for Shell
         # as the start for the episode is random in the external data, it does not matter if we use the difference of
         # the return from step minus step-1 or step+1 and step, as it is only shifted "another time" by the reward
         # --> not using external data anymore
         # calculation
-        #TODO
         sub_lvl = self._sub_lvl
-        own_return = 0.073
+        own_return_t = 0.073
+        own_return_t_1 = 0.073
+        # own_return = self._own_return
+        # own_return_t = own_return[step+1]
+        # own_return_t_1 = own_return[step]
+
         sup = self._support[1]
         alpha = self._alpha
 
-        profit_t = resource['Shell'][1] * (own_return * (1 - sup) + sub_lvl * sup) + \
+        profit_t = resource['Shell'][1] * (own_return_t * (1 - sup) + sub_lvl * sup) + \
                    alpha * sub_lvl * resource['Shell'][0]
-        profit_t_1 = prev_res['Shell'][1] * (own_return * (1 - prev_sup[1]) + prev_sub_lvl * prev_sup[1]) + \
+        profit_t_1 = prev_res['Shell'][1] * (own_return_t_1 * (1 - prev_sup[1]) + prev_sub_lvl * prev_sup[1]) + \
                      alpha * prev_sub_lvl * prev_res['Shell'][0]
         r_shell = profit_t - profit_t_1
 
         # V1: calculation based on profit of current time step
         # r['Shell'] = profit_t
-
         # r_shell_split = np.array([r_shell,
-        #                           resource['Shell'][1] * own_return,
-        #                           sub_lvl * resource['Shell'][0],
-        #                           prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1]])
+        #                           resource['Shell'][1] * own_return * (1 - sup),
+        #                           resource['Shell'][1] * sub_lvl * sup,
+        #                           alpha * sub_lvl * resource['Shell'][0]])
 
         # V2.1: calculation based on difference of profit between current and previous time step
-        r['Shell'] = r_shell
-        r_shell_split = np.array([r_shell, own_return * (1 - sup), sub_lvl * sup, 0])
+        # r['Shell'] = r_shell
 
         # V2.2: calculation based on difference of profit between current and previous time step and +1 and -1 rewards
-        # TODO: V2.3
-        # if profit_t > 10**-1.3:
-        #     r['Shell'] = 1
-        # else:
-        #     r['Shell'] = -1
-        #
-        # r_shell_split = np.array([r_shell,
-        #                           prev_res['Shell'][1] * own_return[step+1] - resource['Shell'][1] * own_return[step],
-        #                           prev_sub_lvl * prev_res['Shell'][0] - sub_lvl * resource['Shell'][0],
-        #                           prev_sub_lvl * prev_sup[1] * prev_res['Shell'][1] -
-        #                           sub_lvl * self._support[1] * resource['Shell'][1]])
+        if r_shell > -0.000025:  # -0.000025
+            r['Shell'] = 1
+        else:
+            r['Shell'] = -1
 
+        r_shell_split = np.array([r_shell,
+                                  resource['Shell'][1] * own_return_t * (1 - sup) -
+                                  prev_res['Shell'][1] * own_return_t_1 * (1 - prev_sup[1]),
+                                  resource['Shell'][1] * sub_lvl * sup -
+                                  prev_res['Shell'][1] * prev_sub_lvl * prev_sup[1],
+                                  alpha * sub_lvl * resource['Shell'][0] -
+                                  alpha * prev_sub_lvl * prev_res['Shell'][0]])
         return r, r_shell_split
 
     def set(self, delta_res, beta, delta_research):
@@ -201,16 +194,15 @@ class FSCNetworkEnvAlternative(object):
 
         # calculate support for Shell and Gov
         denom1 = prev_resource['Shell'][0] + prev_resource['Shell'][2]
+        if denom1 == 0:   # catch case where resource allocation is zero, thus is does not matter must not be zero
+            denom1 = 1
         support[1] = prev_support[1] + beta * \
-                     (prev_resource['Shell'][2] / denom1 * (prev_support[2] - prev_support[1])
-                      + prev_resource['Shell'][0] / denom1 * prev_states['FSC'][2])
+                     (prev_resource['Shell'][2] / denom1 * (prev_support[2] - prev_support[1]) +
+                      prev_resource['Shell'][0] / denom1 * prev_states['FSC'][2])
         denom2 = np.array(prev_resource['Gov']).sum()
         support[2] = prev_support[2] + beta * \
-                     (prev_resource['Gov'][1] / denom2 * (prev_support[1] - prev_support[2])
-                      + prev_resource['Gov'][0] / denom2 * prev_states['FSC'][3])
-
-        # r_shares_fsc = np.array([prev_resource['Shell'][0] / denom1 * prev_states['FSC'][2],
-        #                          prev_resource['Gov'][0] / denom2 * prev_states['FSC'][3]])
+                     (prev_resource['Gov'][1] / denom2 * (prev_support[1] - prev_support[2]) +
+                      prev_resource['Gov'][0] / denom2 * prev_states['FSC'][3])
 
         # change negative supports to 0 and larger than 1 to 1
         support = np.array([val if val > 0 else 0 for val in support])
