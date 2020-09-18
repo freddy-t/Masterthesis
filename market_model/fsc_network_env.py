@@ -14,7 +14,7 @@ np.random.seed(42)
 class FSCNetworkEnvAlternative(object):
 
     def __init__(self, init_sup, init_res, ep_len, delta_res, beta, n_state_space,
-                 delta_search, base_impacts, alpha, sub_max=0.1, mode='train', agg_weeks=4, save_calc=False):
+                 delta_search, base_impacts, lambda_, sub_max, mode='train', agg_weeks=4, save_calc=False):
         # setup environment parameters
         ext_data = load_data(agg_weeks)
         self._episode_len = ep_len
@@ -25,7 +25,7 @@ class FSCNetworkEnvAlternative(object):
         self._delta_research = delta_search
         self._base_impacts = base_impacts
         self._sub_max = sub_max
-        self._alpha = alpha
+        self._lambda_ = lambda_
         self._save_calc = save_calc
         self._impacts = {'Shell': np.zeros(ep_len),
                          'Gov': np.zeros(ep_len)}
@@ -125,18 +125,23 @@ class FSCNetworkEnvAlternative(object):
         # own_return_t_1 = own_return[step]
 
         sup = self._support[1]
-        alpha = self._alpha
+        lambda_ = self._lambda_
 
         profit_t = resource['Shell'][1] * (own_return_t * (1 - sup) + sub_lvl * sup) + \
-                   alpha * sub_lvl * resource['Shell'][0]
+                   lambda_ * sub_lvl * resource['Shell'][0]
         profit_t_1 = prev_res['Shell'][1] * (own_return_t_1 * (1 - prev_sup[1]) + prev_sub_lvl * prev_sup[1]) + \
-                     alpha * prev_sub_lvl * prev_res['Shell'][0]
+                     lambda_ * prev_sub_lvl * prev_res['Shell'][0]
         r_shell = profit_t - profit_t_1
 
         # V1: calculation based on profit of current time step
         # r['Shell'] = profit_t
-        # r_shell_split = np.array([r_shell,
-        #                           resource['Shell'][1] * own_return * (1 - sup),
+        # V1.2:
+        # if profit_t > 0.04:
+        #     r['Shell'] = profit_t
+        # else:
+        #     r['Shell'] = -0.1
+        # r_shell_split = np.array([profit_t,
+        #                           resource['Shell'][1] * own_return_t * (1 - sup),
         #                           resource['Shell'][1] * sub_lvl * sup,
         #                           alpha * sub_lvl * resource['Shell'][0]])
 
@@ -144,7 +149,7 @@ class FSCNetworkEnvAlternative(object):
         # r['Shell'] = r_shell
 
         # V2.2: calculation based on difference of profit between current and previous time step and +1 and -1 rewards
-        if r_shell > -0.000025:  # -0.000025
+        if r_shell > -0.000025:  #-0.0004: #
             r['Shell'] = 1
         else:
             r['Shell'] = -1
@@ -154,8 +159,8 @@ class FSCNetworkEnvAlternative(object):
                                   prev_res['Shell'][1] * own_return_t_1 * (1 - prev_sup[1]),
                                   resource['Shell'][1] * sub_lvl * sup -
                                   prev_res['Shell'][1] * prev_sub_lvl * prev_sup[1],
-                                  alpha * sub_lvl * resource['Shell'][0] -
-                                  alpha * prev_sub_lvl * prev_res['Shell'][0]])
+                                  lambda_ * sub_lvl * resource['Shell'][0] -
+                                  lambda_ * prev_sub_lvl * prev_res['Shell'][0]])
         return r, r_shell_split
 
     def set(self, delta_res, beta, delta_research):

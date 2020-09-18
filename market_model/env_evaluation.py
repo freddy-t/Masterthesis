@@ -11,7 +11,6 @@ from functions import create_val_dir, create_dict
 # runtime parameters
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEBUG = True           # True if in debug mode
-# suffix = '_fsc_V2.1_shell_V1'
 suffix = '_fsc_V2.3_eps0.15_0.17_shell_V2.2_eps0.000025'
 
 # constant model parameters
@@ -22,7 +21,7 @@ N_STATE_SPACE = {'FSC': 4,
                  'Shell': 4,
                  'Gov': 3}
 INIT_SUPPORT = [np.inf, 0.0, 0.0]                   # initial support by the agents, must be in order (FSC, Shell, Gov)
-INIT_RESOURCE = {'Shell': [0.025,  0.95, 0.025],    # initial resource assignment  FSC  Shell  Gov
+INIT_RESOURCE = {'Shell': [0.03,  0.94, 0.03],    # initial resource assignment  FSC  Shell  Gov
                  'Gov':   [0.5,   0.5]}
 BASE_IMPACTS = {'Shell': [0.38, 0.11],              # impact according to action 2 and 3 on agent
                 'Gov':   [0.03, 0.33]}
@@ -30,7 +29,8 @@ BASE_IMPACTS = {'Shell': [0.38, 0.11],              # impact according to action
 REQUIRED_NEURAL_NETS = {'FSC':   ['All'],
                         'Shell': ['FSC', 'Gov'],
                         'Gov':   []}
-ALPHA = 0.5
+LAMBDA = 0.5
+SUB_MAX = 0.1
 
 # RL parameters
 LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 104
@@ -45,25 +45,18 @@ SAVE_INTERVAL = 100                   # numbers of updates until data/model is s
 # range_delta_resource = np.array([0.01, 0.02]) * factor
 # range_delta_research = np.array([0.085, 0.09]) * factor
 # range_beta = np.array([0.075, 0.08]) * factor
-# investigated ranges: resource: 0.01, 0.06, 0.005; research: 0.01, 0.25, 0.01; beta: 0.05, 0.25, 0.02
-range_delta_resource = np.arange(0.01, 0.06, 0.005)
+# investigated ranges: resource: 0.005, 0.055, 0.005; research: 0.01, 0.25, 0.01; beta: 0.05, 0.25, 0.02
+range_delta_resource = np.arange(0.005, 0.055, 0.005)
+# range_delta_resource = np.array([0.015, 0.030])
 range_beta = np.array([0.05, 0.10, 0.15, 0.20])
 range_delta_research = np.array([0.17, 0.08, 0.05, 0.03])
-# range_delta_research = np.arange(0.01, 0.25, 0.01)
 SAVE_DIR = create_val_dir(DEBUG, suffix)
 
 # non constant parameters are passed as None
-env = FSCNetworkEnvAlternative(init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, ep_len=LENGTH_EPISODE, alpha=ALPHA,
-                               delta_res=None, beta=None, delta_search=None, n_state_space=N_STATE_SPACE,
-                               base_impacts=BASE_IMPACTS, agg_weeks=4, save_calc=True)
+env = FSCNetworkEnvAlternative(init_sup=INIT_SUPPORT, init_res=INIT_RESOURCE, ep_len=LENGTH_EPISODE, lambda_=LAMBDA,
+                               sub_max=SUB_MAX, delta_res=None, beta=None, delta_search=None,
+                               n_state_space=N_STATE_SPACE, base_impacts=BASE_IMPACTS, agg_weeks=4, save_calc=True)
 times = []
-# while sample_step < num_samples:
-#     start_time = time.time()
-
-# sample evaluation parameters
-# delta_resource = random.randrange(range_delta_resource[0], range_delta_resource[1]+1) / factor
-# beta = random.randrange(range_beta[0], range_beta[1]+1) / factor
-# delta_research = random.randrange(range_delta_research[0], range_delta_research[1]+1) / factor
 sample_step = -1
 for i in range(4):
     delta_research = range_delta_research[i]
@@ -80,7 +73,8 @@ for i in range(4):
                   'delta_research': delta_research,
                   'base_impacts': BASE_IMPACTS,
                   'beta': beta,
-                  'alpha': ALPHA,
+                  'lambda': LAMBDA,
+                  'max subsidy': SUB_MAX,
                   'length_ep': LENGTH_EPISODE,
                   'n_ep': NUM_EPISODES,
                   'lr': LEARNING_RATE,

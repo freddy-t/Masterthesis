@@ -15,9 +15,10 @@ class Agent(object):
 
         # Define the neural network
         self.__base_network = nn.Sequential(nn.Linear(n_state, n_neurons),
-                                            nn.PReLU(n_neurons),          # using an alpha for each neuron
+                                            nn.PReLU(),
                                             nn.Linear(n_neurons, len(act_space)),
                                             nn.Softmax(dim=-1))
+        pass
 
     def get_actions(self, state) -> dict:
         raise NotImplementedError
