@@ -47,6 +47,37 @@ def create_dir(debug_flag, lr, del_search, beta, del_res, env_type='EnvAlt'):
     return save_dir
 
 
+def create_dir_ex_val(debug_flag, lr, lambda_, kappa, sup, env_type='EnvAlt'):
+    # function creates directory to store data of the training/testing
+    dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type)
+
+    # create directory for debugging purposes by deleting or just creating it
+    if debug_flag:
+        bug_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type + '_debug')
+        if not bug_path.is_dir():
+            os.mkdir(bug_path)
+        else:
+            shutil.rmtree(bug_path)
+            os.mkdir(bug_path)
+        return bug_path
+
+    # create directory for the current date or create a new directory in the current date directory
+    n_folders = 0
+    if not dir_path.is_dir():
+        os.mkdir(dir_path)
+        save_dir = dir_path / ('exp' + str(1) + '_lr' + str(lr) + '_lba' + str(lambda_) + '_kpa' + str(kappa) +
+                               '_sup' + str(sup))
+        os.mkdir(save_dir)
+    else:
+        for _, dirnames, _ in os.walk(dir_path):
+            n_folders += len(dirnames)
+        save_dir = dir_path / ('exp' + str(n_folders+1) + '_lr' + str(lr) + '_lba' + str(lambda_) +
+                               '_kpa' + str(kappa) + '_sup' + str(sup))
+        os.mkdir(save_dir)
+
+    return save_dir
+
+
 def create_val_dir(debug_flag, suffix, env_type='EnvAlt'):
     # function creates directory to store data of the training/testing
     dir_path = PATH_SAVED / (str(datetime.datetime.now().date()) + '_' + env_type + '_val')

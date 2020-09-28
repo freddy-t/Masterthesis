@@ -149,7 +149,7 @@ class FSCNetworkEnvAlternative(object):
         # r['Shell'] = r_shell
 
         # V2.2: calculation based on difference of profit between current and previous time step and +1 and -1 rewards
-        if r_shell > -0.000025:  #-0.0004: #
+        if r_shell > -0.000005:  #-0.0004: # für i2 vgl. -0.0005
             r['Shell'] = 1
         else:
             r['Shell'] = -1

@@ -15,7 +15,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEBUG = False                 # True if in debug mode
 save_calc = False             # True if support and resource calculations should be saved
 store_graph = False          # True if computational graph of network should be saved
-reward_fun = 'fsc_V2.3_eps0.15_0.17_shell_V2.2_eps0.000025'
+reward_fun = 'fsc_V2.3_eps0.15_0.17_shell_V2.2_eps5e-6'
 
 # model parameters
 AGENTS = ['FSC', 'Shell', 'Gov']
@@ -25,7 +25,8 @@ N_STATE_SPACE = {'FSC': 4,
                  'Shell': 4,
                  'Gov': 3}
 
-INIT_SUPPORT = [np.inf, 0.0, 0.0]                   # initial support by the agents, must be in order (FSC, Shell, Gov)
+INIT_SUPPORT = [np.inf, 0.0, 0.0]                 # initial support by the agents, must be in order (FSC, Shell, Gov):
+                                                  # base 0.0 0.0
 INIT_RESOURCE = {'Shell': [0.03,  0.94, 0.03],    # initial resource assignment  FSC  Shell  Gov
                  'Gov':   [0.5,   0.5]}
 BASE_IMPACTS = {'Shell': [0.38, 0.11],              # impact according to action 2 and 3 on agent
@@ -35,13 +36,14 @@ REQUIRED_NEURAL_NETS = {'FSC':   ['All'],
                         'Shell': ['FSC', 'Gov'],
                         'Gov':   []}
 
-LAMBDA = 0.5                              # share of innovation subsidy from adaption subsidy sub_lvl
-SUB_MAX = 0.1
+LAMBDA = 0.5                              # share of innovation subsidy from adaption subsidy sub_lvl: base 0.5
+SUB_MAX = 0.1                             # kappa: base 0.1
 delta_resources  = np.array([0.015, 0.030])
-betas            = np.array([0.05, 0.10, 0.15, 0.20])
-delta_researches = np.array([0.17, 0.08, 0.05, 0.03])
+betas            = np.array([0.05, 0.125, 0.20, 0.275])
+delta_researches = np.array([0.275, 0.10, 0.075, 0.05])
+
 start_time_all = time.time()
-for i in range(4):
+for i in len(betas):
     delta_research = delta_researches[i]
     beta = betas[i]
     for delta_resource in delta_resources:
@@ -51,11 +53,11 @@ for i in range(4):
 
         # RL parameters
         LENGTH_EPISODE = 78                   # limits are based on aggregation agg_weeks=1 -> 417, agg_weeks=4 -> 105
-        NUM_EPISODES = 1000
+        NUM_EPISODES = 1010
         LEARNING_RATE = 0.001
         BATCH_SIZE = 10
         GAMMA = 0.99
-        SAVE_INTERVAL = 5                        # numbers of updates until data/model is saved
+        SAVE_INTERVAL = 10                        # numbers of updates until data/model is saved
 
         CONFIG = {'agents': AGENTS,
                   'active_agents': ACT_AGT,
@@ -188,7 +190,6 @@ for i in range(4):
                     # if batch full (= enough rollouts for optimization), perform optimization on networks
                     if batch_count == BATCH_SIZE:
 
-                        optim_count += 1
                         # loop over all agents and over the changeable allocation
                         for agt in ACT_AGT:
                             for par_agt in optimizers[agt].keys():
@@ -197,7 +198,7 @@ for i in range(4):
                                 optimizers[agt][par_agt].zero_grad()
 
                                 # create tensors for calculation
-                                reward_tensor = torch.FloatTensor(batch_returns[agt]).to(device)
+                                return_tensor = torch.FloatTensor(batch_returns[agt]).to(device)
 
                                 # create Long Tensor to use it as indices
                                 action_tensor = torch.LongTensor(np.array(batch_actions[agt][par_agt])).to(device)
@@ -207,7 +208,7 @@ for i in range(4):
                                     all_agents[agt].predict(batch_states[agt].reshape(
                                         [BATCH_SIZE*LENGTH_EPISODE, N_STATE_SPACE[agt]]), par_agt)).to(device)
                                 # use torch.gather to get the logprob to the corresponding action
-                                selected_logprobs = reward_tensor * torch.gather(
+                                selected_logprobs = return_tensor * torch.gather(
                                     logprob, 1, action_tensor.unsqueeze(1)).squeeze().to(device)
                                 loss = -selected_logprobs.mean()
 
@@ -220,18 +221,13 @@ for i in range(4):
                                 # write loss to tensorboard after each optimization step
                                 writer.add_scalar('mean_loss_' + agt + '_' + par_agt, loss, optim_count)
 
-                                # save weights and its gradients for tensorboard after SAVE_INTERVAL number of
-                                # optimization steps
-                                # if optim_count % SAVE_INTERVAL == 0:
-
+                                # save weights and its gradients for tensorboard
                                 for name, weight in all_agents[agt].get_networks()[par_agt].named_parameters():
                                     writer.add_histogram(agt + '_' + par_agt + '_' + name, weight, optim_count)
                                     writer.add_histogram(agt + '_' + par_agt + '_' + name + '_grad', weight.grad, optim_count)
 
                         # save agents, all states and rewards after SAVE_INTERVAL number of optimization steps
-                        if optim_count % SAVE_INTERVAL == 0 or optim_count == 1:
-                            torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep)),
-                                       _use_new_zipfile_serialization=False)
+                        if optim_count % SAVE_INTERVAL == 0 or optim_count == 0:
                             torch.save(batch_rewards, (SAVE_DIR / 'rewards_optim{}_ep{}'.format(optim_count, ep)),
                                        _use_new_zipfile_serialization=False)
                             torch.save(total_rewards, (SAVE_DIR / 'tot_r'), _use_new_zipfile_serialization=False)
@@ -242,7 +238,11 @@ for i in range(4):
                                            _use_new_zipfile_serialization=False)
                                 torch.save(reward_shell_calc, (SAVE_DIR / 'reward_shell_calc_optim{}'.format(optim_count)),
                                            _use_new_zipfile_serialization=False)
-
+                        optim_count += 1
+                        # save agents after according optimization count
+                        if optim_count % SAVE_INTERVAL == 0 or optim_count == 1:
+                            torch.save(all_agents, (SAVE_DIR / 'agents_optim{}_ep{}'.format(optim_count, ep)),
+                                       _use_new_zipfile_serialization=False)
                         # empty batch
                         batch_actions = create_dict(REQUIRED_NEURAL_NETS, ACT_AGT)
                         batch_returns = {'FSC': [], 'Shell': []}
